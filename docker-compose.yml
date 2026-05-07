@@ -1,0 +1,419 @@
+version: '3.8'
+
+networks:
+  cinema-network:
+    driver: bridge
+
+volumes:
+  postgres-auth-data:
+  postgres-movie-data:
+  postgres-hall-data:
+  postgres-order-data:
+  postgres-support-data:
+  postgres-notification-data:
+  redis-data:
+  loki-data:
+  grafana-data:
+
+services:
+  # ============ DATABASES ============
+  postgres-auth:
+    image: postgres:15-alpine
+    container_name: postgres-auth
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: cinema
+      POSTGRES_PASSWORD: cinema
+    volumes:
+      - postgres-auth-data:/var/lib/postgresql/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinema -d auth_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-movie:
+    image: postgres:15-alpine
+    container_name: postgres-movie
+    environment:
+      POSTGRES_DB: movie_db
+      POSTGRES_USER: cinema
+      POSTGRES_PASSWORD: cinema
+    volumes:
+      - postgres-movie-data:/var/lib/postgresql/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinema -d movie_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-hall:
+    image: postgres:15-alpine
+    container_name: postgres-hall
+    environment:
+      POSTGRES_DB: hall_db
+      POSTGRES_USER: cinema
+      POSTGRES_PASSWORD: cinema
+    volumes:
+      - postgres-hall-data:/var/lib/postgresql/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinema -d hall_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-order:
+    image: postgres:15-alpine
+    container_name: postgres-order
+    environment:
+      POSTGRES_DB: order_db
+      POSTGRES_USER: cinema
+      POSTGRES_PASSWORD: cinema
+    volumes:
+      - postgres-order-data:/var/lib/postgresql/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinema -d order_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-support:
+    image: postgres:15-alpine
+    container_name: postgres-support
+    environment:
+      POSTGRES_DB: support_db
+      POSTGRES_USER: cinema
+      POSTGRES_PASSWORD: cinema
+    volumes:
+      - postgres-support-data:/var/lib/postgresql/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinema -d support_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-notification:
+    image: postgres:15-alpine
+    container_name: postgres-notification
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: cinema
+      POSTGRES_PASSWORD: cinema
+    volumes:
+      - postgres-notification-data:/var/lib/postgresql/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cinema -d notification_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============ REDIS ============
+  redis:
+    image: redis:7-alpine
+    container_name: cinema-redis
+    volumes:
+      - redis-data:/data
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============ KAFKA ============
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: cinema-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - cinema-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: cinema-kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "29092:29092"
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ============ LOGGING ============
+  loki:
+    image: grafana/loki:2.9.5
+    container_name: cinema-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./infrastructure/loki/loki-config.yml:/etc/loki/local-config.yaml
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - cinema-network
+
+  promtail:
+    image: grafana/promtail:2.9.5
+    container_name: cinema-promtail
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./infrastructure/promtail/promtail-config.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - cinema-network
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: cinema-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - cinema-network
+
+  # ============ MICROSERVICES ============
+  service-discovery:
+    build:
+      context: ./service-discovery
+      dockerfile: Dockerfile
+    container_name: cinema-eureka
+    ports:
+      - "8761:8761"
+    networks:
+      - cinema-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8761/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: cinema-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      EUREKA_HOST: service-discovery
+      EUREKA_PORT: 8761
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JWT_SECRET: mySecretKey12345678901234567890123456789012345678901234567890
+    depends_on:
+      service-discovery:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cinema-network
+
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: cinema-auth
+    environment:
+      DB_HOST: postgres-auth
+      DB_PORT: 5432
+      DB_USER: cinema
+      DB_PASS: cinema
+      EUREKA_HOST: service-discovery
+      EUREKA_PORT: 8761
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: mySecretKey12345678901234567890123456789012345678901234567890
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+      service-discovery:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cinema-network
+
+  movie-service:
+    build:
+      context: ./movie-service
+      dockerfile: Dockerfile
+    container_name: cinema-movie
+    environment:
+      DB_HOST: postgres-movie
+      DB_PORT: 5432
+      DB_USER: cinema
+      DB_PASS: cinema
+      EUREKA_HOST: service-discovery
+      EUREKA_PORT: 8761
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JWT_SECRET: mySecretKey12345678901234567890123456789012345678901234567890
+    depends_on:
+      postgres-movie:
+        condition: service_healthy
+      service-discovery:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - cinema-network
+
+  hall-service:
+    build:
+      context: ./hall-service
+      dockerfile: Dockerfile
+    container_name: cinema-hall
+    environment:
+      DB_HOST: postgres-hall
+      DB_PORT: 5432
+      DB_USER: cinema
+      DB_PASS: cinema
+      EUREKA_HOST: service-discovery
+      EUREKA_PORT: 8761
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: mySecretKey12345678901234567890123456789012345678901234567890
+    depends_on:
+      postgres-hall:
+        condition: service_healthy
+      service-discovery:
+        condition: service_healthy
+    networks:
+      - cinema-network
+
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: cinema-order
+    environment:
+      DB_HOST: postgres-order
+      DB_PORT: 5432
+      DB_USER: cinema
+      DB_PASS: cinema
+      EUREKA_HOST: service-discovery
+      EUREKA_PORT: 8761
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JWT_SECRET: mySecretKey12345678901234567890123456789012345678901234567890
+    depends_on:
+      postgres-order:
+        condition: service_healthy
+      service-discovery:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - cinema-network
+
+  support-service:
+    build:
+      context: ./support-service
+      dockerfile: Dockerfile
+    container_name: cinema-support
+    environment:
+      DB_HOST: postgres-support
+      DB_PORT: 5432
+      DB_USER: cinema
+      DB_PASS: cinema
+      EUREKA_HOST: service-discovery
+      EUREKA_PORT: 8761
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JWT_SECRET: mySecretKey12345678901234567890123456789012345678901234567890
+    depends_on:
+      postgres-support:
+        condition: service_healthy
+      service-discovery:
+        condition: service_healthy
+    networks:
+      - cinema-network
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: cinema-notification
+    environment:
+      DB_HOST: postgres-notification
+      DB_PORT: 5432
+      DB_USER: cinema
+      DB_PASS: cinema
+      EUREKA_HOST: service-discovery
+      EUREKA_PORT: 8761
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JWT_SECRET: mySecretKey12345678901234567890123456789012345678901234567890
+    depends_on:
+      postgres-notification:
+        condition: service_healthy
+      service-discovery:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - cinema-network
+
+  payment-simulator:
+    build:
+      context: ./payment-simulator
+      dockerfile: Dockerfile
+    container_name: cinema-payment-sim
+    environment:
+      EUREKA_HOST: service-discovery
+      EUREKA_PORT: 8761
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ORDER_SERVICE_HOST: order-service
+      ORDER_SERVICE_PORT: 8084
+    depends_on:
+      service-discovery:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - cinema-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cinema-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - cinema-network

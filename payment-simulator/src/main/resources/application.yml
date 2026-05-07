@@ -1,0 +1,23 @@
+server:
+  port: 8087
+spring:
+  application:
+    name: payment-simulator
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: payment-simulator-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+eureka:
+  client:
+    service-url:
+      defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/
+  instance:
+    prefer-ip-address: true
+order:
+  webhook-url: http://${ORDER_SERVICE_HOST:order-service}:${ORDER_SERVICE_PORT:8084}/api/orders/webhook/payment
+logging:
+  pattern:
+    console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss}","level":"%level","service":"payment-simulator","message":"%msg"}%n'
