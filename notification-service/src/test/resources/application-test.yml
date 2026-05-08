@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: jdbc:tc:postgresql:15:///notification_db_test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+eureka:
+  client:
+    enabled: false
+jwt:
+  secret: testSecretKeyForTestingPurposesOnly1234567890123456

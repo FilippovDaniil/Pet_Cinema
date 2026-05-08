@@ -3,6 +3,7 @@ package com.cinema.movie.exception;
 import com.cinema.dto.common.ErrorResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -41,6 +42,15 @@ public class GlobalExceptionHandler {
                 .message(message)
                 .build();
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
+        ErrorResponse error = ErrorResponse.builder()
+                .errorCode("ACCESS_DENIED")
+                .message("Access denied")
+                .build();
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
     }
 
     @ExceptionHandler(Exception.class)

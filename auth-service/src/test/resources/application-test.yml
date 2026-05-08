@@ -1,0 +1,31 @@
+spring:
+  datasource:
+    # Overridden at runtime by @DynamicPropertySource in integration tests.
+    # For any standalone context that does not override, use the TC JDBC URL.
+    url: jdbc:tc:postgresql:15:///auth_db_test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+    username: cinema
+    password: cinema
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  cloud:
+    discovery:
+      enabled: false
+
+eureka:
+  client:
+    enabled: false
+
+jwt:
+  secret: testSecretKeyForTestingPurposesOnly1234567890123456
+  access-token-expiration: 900000
+  refresh-token-expiration: 604800000

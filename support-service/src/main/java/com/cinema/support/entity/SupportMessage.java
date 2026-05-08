@@ -20,7 +20,7 @@ public class SupportMessage {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(name = "ticket_id", nullable = false)
     private Long ticketId;
 
     @ManyToOne(fetch = FetchType.LAZY)

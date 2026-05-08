@@ -57,6 +57,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }
 
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleSpringSecurityAccessDenied(
+            org.springframework.security.access.AccessDeniedException ex) {
+        log.warn("Spring Security access denied: {}", ex.getMessage());
+        ErrorResponse error = ErrorResponse.builder()
+                .errorCode("ACCESS_DENIED")
+                .message("Access denied")
+                .build();
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception ex) {
         log.error("Unexpected error occurred: {}", ex.getMessage(), ex);

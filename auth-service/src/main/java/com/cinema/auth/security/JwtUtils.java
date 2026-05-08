@@ -3,6 +3,7 @@ package com.cinema.auth.security;
 import com.cinema.auth.entity.User;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.security.SignatureException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Component
@@ -33,6 +35,7 @@ public class JwtUtils {
         Date expiryDate = new Date(now.getTime() + accessExpiration);
 
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(String.valueOf(user.getId()))
                 .claim("roles", List.of(user.getRole().name()))
                 .issuedAt(now)
@@ -46,6 +49,7 @@ public class JwtUtils {
         Date expiryDate = new Date(now.getTime() + refreshExpiration);
 
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(String.valueOf(user.getId()))
                 .issuedAt(now)
                 .expiration(expiryDate)
@@ -66,7 +70,7 @@ public class JwtUtils {
             log.warn("JWT token is unsupported: {}", e.getMessage());
         } catch (MalformedJwtException e) {
             log.warn("JWT token is malformed: {}", e.getMessage());
-        } catch (SecurityException e) {
+        } catch (SignatureException e) {
             log.warn("JWT signature validation failed: {}", e.getMessage());
         } catch (IllegalArgumentException e) {
             log.warn("JWT token compact of handler are invalid: {}", e.getMessage());

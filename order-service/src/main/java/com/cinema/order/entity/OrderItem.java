@@ -37,6 +37,7 @@ public class OrderItem {
     private String ticketExtraServices;
 
     // Food-specific fields
+    @Column(name = "food_item_id")
     private Long foodItemId;
 
     @ManyToOne(fetch = FetchType.LAZY)

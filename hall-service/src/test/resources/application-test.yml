@@ -1,0 +1,24 @@
+spring:
+  datasource:
+    url: jdbc:tc:postgresql:15:///hall_db_test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  data:
+    redis:
+      host: localhost
+      port: 6379
+eureka:
+  client:
+    enabled: false
+spring.cloud.discovery.enabled: false
+jwt:
+  secret: testSecretKeyForTestingPurposesOnly1234567890123456
+management:
+  health:
+    redis:
+      enabled: false

@@ -382,3 +382,139 @@ docker-compose up --build auth-service
 5. **Kafka String десериализация** — notification-service и payment-simulator используют StringDeserializer и парсят JSON вручную через ObjectMapper для гибкости.
 
 6. **Frontend proxy** — в режиме dev Vite проксирует /api → localhost:8080. В Docker Nginx проксирует /api → api-gateway:8080.
+
+7. **JWT jti claim** — `JwtUtils.generateAccessToken()` и `generateRefreshToken()` добавляют `.id(UUID.randomUUID().toString())` в builder, чтобы токены, выданные в одну секунду, были уникальными (JWT `iat`/`exp` имеют точность до секунды по RFC 7519).
+
+8. **Hibernate дублирование колонок** — в `OrderItem` и `SupportMessage` скалярное FK-поле (`Long foodItemId`, `Long ticketId`) аннотировано `@Column(name = "food_item_id")` / `@Column(name = "ticket_id")`. Без явного имени Hibernate создаёт два логических имени для одной физической колонки и падает с `DuplicateMappingException`.
+
+9. **SecurityConfig + @EnableMethodSecurity** — в `order-service` и `support-service` добавлен handler для `org.springframework.security.access.AccessDeniedException` в `GlobalExceptionHandler`, иначе Spring Security кидает 500 вместо 403 при нарушении `@PreAuthorize`.
+
+10. **SecurityConfig.exceptionHandling** — в `order-service` `SecurityConfig` явно задан `HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)`, иначе Spring Security 6 по умолчанию возвращает 403 вместо 401 для неаутентифицированных запросов.
+
+---
+
+## Тесты: структура и паттерны
+
+Тесты написаны во всех 6 бизнес-сервисах. Полный запуск: `./gradlew test` → BUILD SUCCESSFUL.
+
+### Структура тестов в каждом сервисе
+```
+src/test/java/com/cinema/{service}/
+├── controller/
+│   ├── XxxControllerTest.java     ← @WebMvcTest, web layer only
+│   └── ...
+├── service/
+│   ├── XxxServiceTest.java        ← @ExtendWith(MockitoExtension.class), pure unit
+│   └── ...
+└── XxxServiceIntegrationTest.java ← @SpringBootTest + Testcontainers (PostgreSQL)
+```
+
+### Паттерн @WebMvcTest
+
+```java
+@WebMvcTest(MyController.class)
+@Import(SecurityConfig.class)      // обязательно — @WebMvcTest не сканирует @Configuration
+class MyControllerTest {
+
+    @MockBean
+    private MyService myService;
+
+    @MockBean
+    private JwtUtils jwtUtils;     // нужен реальному JwtAuthFilter (найден сканом)
+    // JwtAuthFilter НЕ мокируем — мок глотает все запросы (Mockito void по умолчанию ничего не делает)
+```
+
+Аутентификация в тестах — через `SecurityMockMvcRequestPostProcessors.authentication()`:
+```java
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+
+private UsernamePasswordAuthenticationToken auth(String userId, String role) {
+    return new UsernamePasswordAuthenticationToken(
+            userId, null, List.of(new SimpleGrantedAuthority(role)));
+}
+
+mockMvc.perform(get("/api/resource")
+        .with(authentication(auth("1", "ROLE_USER"))))
+```
+
+**Почему не `jwt()`**: требует `spring-security-oauth2-resource-server` в classpath, которого нет.
+
+### Паттерн @SpringBootTest (Integration)
+
+```java
+@SpringBootTest(properties = {
+        "eureka.client.enabled=false",
+        "spring.cloud.discovery.enabled=false"
+})
+@ActiveProfiles("test")
+@Testcontainers
+class MyIntegrationTest {
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+            .withDatabaseName("xxx_db_test")
+            .withUsername("cinema")
+            .withPassword("cinema");
+
+    @DynamicPropertySource
+    static void props(DynamicPropertyRegistry r) {
+        r.add("spring.datasource.url", postgres::getJdbcUrl);
+        r.add("spring.datasource.username", postgres::getUsername);
+        r.add("spring.datasource.password", postgres::getPassword);
+        r.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
+    }
+
+    // Kafka — мок чтобы не нужен брокер
+    @MockBean
+    private KafkaTemplate<String, Object> kafkaTemplate;
+```
+
+### Redis в интеграционных тестах
+
+`RedisConnectionFactory` и `ReactiveRedisConnectionFactory` — разные интерфейсы, мокировать надо оба:
+
+```java
+@MockBean
+private RedisConnectionFactory redisConnectionFactory;
+
+@MockBean
+private ReactiveRedisConnectionFactory reactiveRedisConnectionFactory;
+```
+
+В `src/test/resources/application-test.yml` добавить:
+```yaml
+management:
+  health:
+    redis:
+      enabled: false
+```
+
+### @BeforeEach порядок очистки БД
+
+Удалять в порядке child → parent (FK constraints):
+```java
+@BeforeEach
+void setUp() {
+    ticketRepository.deleteAll();
+    orderRepository.deleteAll();   // order_items ссылаются на food_items
+    foodItemRepository.deleteAll();
+}
+```
+
+### Gradle 9.1 + JUnit 5
+
+В корневом `build.gradle.kts` обязательно:
+```kotlin
+tasks.withType<Test> {
+    useJUnitPlatform()
+}
+// В блоке dependencies subprojects:
+"testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
+```
+
+### Spring Security 6 в тестах
+
+- `@WebMvcTest` + `@Import(SecurityConfig.class)` — чтобы загрузить правила авторизации и `@EnableMethodSecurity`
+- `@ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)` — обязателен в `GlobalExceptionHandler`, иначе `@PreAuthorize` отказы → 500
+- `HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)` — нужен в `SecurityConfig.exceptionHandling()`, иначе 401 для неаутентифицированных превращается в 403

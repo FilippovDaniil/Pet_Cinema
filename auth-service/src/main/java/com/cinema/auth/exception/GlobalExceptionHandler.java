@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -40,6 +41,16 @@ public class GlobalExceptionHandler {
         ErrorResponse error = ErrorResponse.builder()
                 .errorCode("BAD_REQUEST")
                 .message(ex.getMessage())
+                .build();
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ErrorResponse> handleMissingRequestHeaderException(MissingRequestHeaderException ex) {
+        log.warn("Missing required header: {}", ex.getMessage());
+        ErrorResponse error = ErrorResponse.builder()
+                .errorCode("BAD_REQUEST")
+                .message("Required header '" + ex.getHeaderName() + "' is missing")
                 .build();
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }

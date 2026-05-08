@@ -1,0 +1,18 @@
+spring:
+  datasource:
+    url: jdbc:tc:postgresql:15:///support_db_test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  kafka:
+    bootstrap-servers: localhost:9092
+eureka:
+  client:
+    enabled: false
+spring.cloud.discovery.enabled: false
+jwt:
+  secret: testSecretKeyForTestingPurposesOnly1234567890123456
