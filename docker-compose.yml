@@ -208,8 +208,8 @@ services:
   # ============ MICROSERVICES ============
   service-discovery:
     build:
-      context: ./service-discovery
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: service-discovery/Dockerfile
     container_name: cinema-eureka
     ports:
       - "8761:8761"
@@ -223,8 +223,8 @@ services:
 
   api-gateway:
     build:
-      context: ./api-gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api-gateway/Dockerfile
     container_name: cinema-gateway
     ports:
       - "8080:8080"
@@ -245,8 +245,8 @@ services:
 
   auth-service:
     build:
-      context: ./auth-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: auth-service/Dockerfile
     container_name: cinema-auth
     environment:
       DB_HOST: postgres-auth
@@ -270,8 +270,8 @@ services:
 
   movie-service:
     build:
-      context: ./movie-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: movie-service/Dockerfile
     container_name: cinema-movie
     environment:
       DB_HOST: postgres-movie
@@ -296,8 +296,8 @@ services:
 
   hall-service:
     build:
-      context: ./hall-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: hall-service/Dockerfile
     container_name: cinema-hall
     environment:
       DB_HOST: postgres-hall
@@ -319,8 +319,8 @@ services:
 
   order-service:
     build:
-      context: ./order-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: order-service/Dockerfile
     container_name: cinema-order
     environment:
       DB_HOST: postgres-order
@@ -343,8 +343,8 @@ services:
 
   support-service:
     build:
-      context: ./support-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: support-service/Dockerfile
     container_name: cinema-support
     environment:
       DB_HOST: postgres-support
@@ -365,8 +365,8 @@ services:
 
   notification-service:
     build:
-      context: ./notification-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: notification-service/Dockerfile
     container_name: cinema-notification
     environment:
       DB_HOST: postgres-notification
@@ -389,8 +389,8 @@ services:
 
   payment-simulator:
     build:
-      context: ./payment-simulator
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: payment-simulator/Dockerfile
     container_name: cinema-payment-sim
     environment:
       EUREKA_HOST: service-discovery
@@ -409,7 +409,6 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
     container_name: cinema-frontend
     ports:
       - "80:80"

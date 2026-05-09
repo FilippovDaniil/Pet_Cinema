@@ -1,0 +1,21 @@
+# Build outputs — не нужны в Docker context (JAR собирается внутри образа)
+**/build/
+**/.gradle/
+**/out/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docs
+*.md

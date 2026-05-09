@@ -356,15 +356,20 @@ frontend/src/
 ## Сборка и запуск
 
 ```bash
-# Собрать все JAR файлы
-./gradlew build -x test
-
-# Запустить всю систему
+# Запустить всю систему (сборка JAR происходит внутри Docker, JDK не нужен)
 docker-compose up --build
 
-# Пересобрать один сервис
-./gradlew :auth-service:build -x test
+# Пересобрать один сервис после изменений
 docker-compose up --build auth-service
+```
+
+Каждый Java Dockerfile — multi-stage: builder (eclipse-temurin:17-jdk-alpine) запускает
+`./gradlew :service:bootJar -x test --no-daemon`, runtime (eclipse-temurin:17-jre-alpine)
+копирует только JAR. Контекст сборки — корень проекта (context: .).
+
+Если нужно собрать JAR локально (для запуска через IDEA или отладки):
+```bash
+./gradlew :auth-service:bootJar -x test
 ```
 
 ---
