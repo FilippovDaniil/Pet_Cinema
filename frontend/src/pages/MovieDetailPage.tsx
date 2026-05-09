@@ -97,6 +97,13 @@ export default function MovieDetailPage() {
     }
   };
 
+  const POSTER_GRADIENTS: Record<string, string> = {
+    TWO_D:   'linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%)',
+    THREE_D: 'linear-gradient(160deg, #0a2e1a 0%, #0d5c32 50%, #11998e 100%)',
+    FIVE_D:  'linear-gradient(160deg, #1a0533 0%, #4a1063 50%, #8b2fc9 100%)',
+  };
+  const posterGradient = POSTER_GRADIENTS[movie.type] ?? 'linear-gradient(160deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
+
   const typeBadgeColor: Record<string, string> = {
     TWO_D: '#1a73e8',
     THREE_D: '#0d7a4e',
@@ -132,20 +139,27 @@ export default function MovieDetailPage() {
 
       {/* Movie Info */}
       <div style={{ display: 'flex', gap: '2rem', marginBottom: '3rem', flexWrap: 'wrap' }}>
-        <div style={{ flexShrink: 0 }}>
-          {movie.posterUrl ? (
+        <div style={{ flexShrink: 0, width: '280px', aspectRatio: '2/3', borderRadius: '12px', overflow: 'hidden', position: 'relative', background: posterGradient }}>
+          {/* Fallback content */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            gap: '1rem', padding: '2rem',
+          }}>
+            <span style={{ fontSize: '4rem', lineHeight: 1 }}>🎬</span>
+            <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.95rem', textAlign: 'center', lineHeight: 1.4 }}>
+              {movie.title}
+            </span>
+          </div>
+          {/* Real poster on top */}
+          {movie.posterUrl && (
             <img
               src={movie.posterUrl}
               alt={movie.title}
-              style={{ width: '280px', borderRadius: '12px', objectFit: 'cover', aspectRatio: '2/3' }}
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
             />
-          ) : (
-            <div style={{ width: '280px', aspectRatio: '2/3', background: '#222', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
-              Нет постера
-            </div>
           )}
         </div>
         <div style={{ flex: 1, minWidth: '280px' }}>

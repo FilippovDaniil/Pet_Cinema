@@ -3,6 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import { Movie, Genre, PageResponse } from '../types';
 
+const POSTER_GRADIENTS: Record<string, string> = {
+  TWO_D:   'linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%)',
+  THREE_D: 'linear-gradient(160deg, #0a2e1a 0%, #0d5c32 50%, #11998e 100%)',
+  FIVE_D:  'linear-gradient(160deg, #1a0533 0%, #4a1063 50%, #8b2fc9 100%)',
+};
+
+function getPosterGradient(type: string): string {
+  return POSTER_GRADIENTS[type] ?? 'linear-gradient(160deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
+}
+
 const MOVIE_TYPES = [
   { value: '', label: 'Все форматы' },
   { value: 'TWO_D', label: '2D' },
@@ -184,20 +194,27 @@ export default function HomePage() {
               }}
               onClick={() => navigate(`/movies/${movie.id}`)}
             >
-              <div style={{ position: 'relative', aspectRatio: '2/3', overflow: 'hidden' }}>
-                {movie.posterUrl ? (
+              <div style={{ position: 'relative', aspectRatio: '2/3', overflow: 'hidden', background: getPosterGradient(movie.type) }}>
+                {/* Fallback content — visible when no image or image fails */}
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center',
+                  gap: '0.5rem', padding: '0.8rem',
+                }}>
+                  <span style={{ fontSize: '2.5rem', lineHeight: 1 }}>🎬</span>
+                  <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.75rem', textAlign: 'center', lineHeight: 1.3 }}>
+                    {movie.title}
+                  </span>
+                </div>
+                {/* Real poster on top — hides fallback when loaded */}
+                {movie.posterUrl && (
                   <img
                     src={movie.posterUrl}
                     alt={movie.title}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="300"%3E%3Crect fill="%23222" width="200" height="300"/%3E%3Ctext fill="%23555" font-size="14" x="50%25" y="50%25" text-anchor="middle" dominant-baseline="middle"%3EНет постера%3C/text%3E%3C/svg%3E';
-                    }}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                   />
-                ) : (
-                  <div style={{ width: '100%', height: '100%', background: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555' }}>
-                    Нет постера
-                  </div>
                 )}
                 <span style={{
                   position: 'absolute',
