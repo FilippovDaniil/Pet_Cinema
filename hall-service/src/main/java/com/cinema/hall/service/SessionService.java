@@ -27,7 +27,20 @@ public class SessionService {
 
     @Transactional(readOnly = true)
     public List<SessionDto> getSessions(Long movieId, Long hallId, LocalDateTime from, LocalDateTime to) {
-        return sessionRepository.findByFilters(movieId, hallId, from, to).stream()
+        List<Session> base;
+        if (movieId != null) {
+            base = sessionRepository.findByMovieIdAndActive(movieId, true);
+        } else if (hallId != null) {
+            base = sessionRepository.findByHallIdAndActive(hallId, true);
+        } else {
+            base = sessionRepository.findAll().stream()
+                    .filter(Session::isActive)
+                    .collect(Collectors.toList());
+        }
+        return base.stream()
+                .filter(s -> hallId == null || s.getHall().getId().equals(hallId))
+                .filter(s -> from == null || !s.getStartTime().isBefore(from))
+                .filter(s -> to == null || !s.getStartTime().isAfter(to))
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
