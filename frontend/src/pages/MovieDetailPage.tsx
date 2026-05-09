@@ -102,7 +102,6 @@ export default function MovieDetailPage() {
     THREE_D: 'linear-gradient(160deg, #0a2e1a 0%, #0d5c32 50%, #11998e 100%)',
     FIVE_D:  'linear-gradient(160deg, #1a0533 0%, #4a1063 50%, #8b2fc9 100%)',
   };
-  const posterGradient = POSTER_GRADIENTS[movie.type] ?? 'linear-gradient(160deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
 
   const typeBadgeColor: Record<string, string> = {
     TWO_D: '#1a73e8',
@@ -126,6 +125,8 @@ export default function MovieDetailPage() {
       </div>
     );
   }
+
+  const posterGradient = POSTER_GRADIENTS[movie.type] ?? 'linear-gradient(160deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
 
   return (
     <div>
