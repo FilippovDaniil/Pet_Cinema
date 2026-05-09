@@ -3,6 +3,7 @@ package com.cinema.order.service;
 import com.cinema.dto.hall.ExtraServiceDto;
 import com.cinema.dto.hall.SessionDto;
 import com.cinema.dto.order.*;
+import com.cinema.order.dto.ClientFoodOrderRequest;
 import com.cinema.order.entity.*;
 import com.cinema.order.exception.AccessDeniedException;
 import com.cinema.order.exception.ResourceNotFoundException;
@@ -171,6 +172,45 @@ public class OrderService {
         return toDto(saved);
     }
 
+    // ---- CLIENT flow: create food order (immediate payment) ----
+
+    @Transactional
+    public OrderDto createFoodOrderByClient(ClientFoodOrderRequest req, Long userId) {
+        BigDecimal totalPrice = BigDecimal.ZERO;
+
+        Order order = Order.builder()
+                .userId(userId)
+                .orderType(OrderType.FOOD)
+                .status(OrderStatus.PAID)
+                .totalPrice(BigDecimal.ZERO)
+                .createdAt(LocalDateTime.now())
+                .items(new ArrayList<>())
+                .build();
+
+        for (ClientFoodOrderRequest.ItemRequest itemReq : req.getItems()) {
+            FoodItem foodItem = foodItemRepository.findById(itemReq.getFoodItemId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Food item not found: " + itemReq.getFoodItemId()));
+
+            BigDecimal itemTotal = foodItem.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
+            totalPrice = totalPrice.add(itemTotal);
+
+            OrderItem orderItem = OrderItem.builder()
+                    .order(order)
+                    .itemType(ItemType.FOOD)
+                    .foodItemId(foodItem.getId())
+                    .quantity(itemReq.getQuantity())
+                    .price(itemTotal)
+                    .build();
+            order.getItems().add(orderItem);
+        }
+
+        order.setTotalPrice(totalPrice);
+        Order saved = orderRepository.save(order);
+        log.info("Client {} created food order {}", userId, saved.getId());
+        return toDto(saved);
+    }
+
     // ---- Payment webhook handler ----
 
     @Transactional
@@ -215,7 +255,8 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + id));
 
         boolean isOwner = order.getUserId().equals(userId);
-        boolean isPrivileged = "SELLER".equals(role) || "ADMIN".equals(role);
+        boolean isPrivileged = "ROLE_SELLER".equals(role) || "ROLE_ADMIN".equals(role)
+                || "SELLER".equals(role) || "ADMIN".equals(role);
 
         if (!isOwner && !isPrivileged) {
             throw new AccessDeniedException("You do not have access to this order");

@@ -1,6 +1,7 @@
 package com.cinema.order.controller;
 
 import com.cinema.dto.order.*;
+import com.cinema.order.dto.ClientFoodOrderRequest;
 import com.cinema.order.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -39,7 +40,7 @@ public class OrderController {
      * SELLER: Create a ticket order on behalf of a client (immediate payment)
      */
     @PostMapping("/ticket/by-seller")
-    @PreAuthorize("hasAuthority('SELLER') or hasAuthority('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_SELLER') or hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<OrderDto> createTicketOrderBySeller(
             @Valid @RequestBody SellerTicketOrderRequest request,
             Authentication authentication) {
@@ -52,12 +53,25 @@ public class OrderController {
      * SELLER: Create a food order for a client
      */
     @PostMapping("/food")
-    @PreAuthorize("hasAuthority('SELLER') or hasAuthority('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_SELLER') or hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<OrderDto> createFoodOrder(
             @Valid @RequestBody FoodOrderRequest request,
             Authentication authentication) {
         Long sellerId = Long.parseLong(authentication.getName());
         OrderDto order = orderService.createFoodOrder(request, sellerId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(order);
+    }
+
+    /**
+     * CLIENT: Create a food order (immediate payment)
+     */
+    @PostMapping("/food/client")
+    @PreAuthorize("hasAuthority('ROLE_CLIENT')")
+    public ResponseEntity<OrderDto> createFoodOrderByClient(
+            @Valid @RequestBody ClientFoodOrderRequest request,
+            Authentication authentication) {
+        Long userId = Long.parseLong(authentication.getName());
+        OrderDto order = orderService.createFoodOrderByClient(request, userId);
         return ResponseEntity.status(HttpStatus.CREATED).body(order);
     }
 

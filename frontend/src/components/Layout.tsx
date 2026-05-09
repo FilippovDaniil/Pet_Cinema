@@ -82,6 +82,9 @@ export default function Layout() {
           <Link to="/" style={linkStyle}>Афиша</Link>
           <Link to="/food" style={linkStyle}>Меню</Link>
           {isAuthenticated && (
+            <Link to="/orders" style={linkStyle}>Заказы</Link>
+          )}
+          {isAuthenticated && (
             <Link to="/profile" style={linkStyle}>Профиль</Link>
           )}
           {isAuthenticated && (

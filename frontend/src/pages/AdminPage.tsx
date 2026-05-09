@@ -553,11 +553,14 @@ function SessionsTab() {
 }
 
 // -------------------- MENU TAB --------------------
+const FOOD_CATEGORIES = ['POPCORN', 'DRINK', 'SNACK', 'OTHER'];
+
 function MenuTab() {
   const [items, setItems] = useState<FoodItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', price: '', category: '' });
+  const [editItem, setEditItem] = useState<FoodItem | null>(null);
+  const [form, setForm] = useState({ name: '', price: '', category: 'POPCORN' });
   const [error, setError] = useState('');
 
   useEffect(() => { fetchItems(); }, []);
@@ -570,19 +573,34 @@ function MenuTab() {
     } catch { setError('Ошибка загрузки'); } finally { setLoading(false); }
   };
 
-  const createItem = async () => {
+  const openCreate = () => {
+    setEditItem(null);
+    setForm({ name: '', price: '', category: 'POPCORN' });
+    setShowForm(true);
     setError('');
+  };
+
+  const openEdit = (item: FoodItem) => {
+    setEditItem(item);
+    setForm({ name: item.name, price: String(item.price), category: item.category });
+    setShowForm(true);
+    setError('');
+  };
+
+  const saveItem = async () => {
+    setError('');
+    const payload = { name: form.name, price: parseFloat(form.price) || 0, category: form.category };
     try {
-      await api.post('/food-menu', {
-        name: form.name,
-        price: parseFloat(form.price) || 0,
-        category: form.category,
-      });
+      if (editItem) {
+        await api.put(`/food-menu/${editItem.id}`, payload);
+      } else {
+        await api.post('/food-menu', payload);
+      }
       setShowForm(false);
-      setForm({ name: '', price: '', category: '' });
+      setEditItem(null);
       fetchItems();
     } catch (e: any) {
-      setError(e.response?.data?.message || 'Ошибка добавления');
+      setError(e.response?.data?.message || 'Ошибка сохранения');
     }
   };
 
@@ -597,21 +615,23 @@ function MenuTab() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <h2 style={{ fontSize: '1.2rem', fontWeight: '600' }}>Меню (Еда и напитки)</h2>
-        <button onClick={() => setShowForm(!showForm)} style={btnPrimary}>+ Добавить позицию</button>
+        <button onClick={openCreate} style={btnPrimary}>+ Добавить позицию</button>
       </div>
 
       {showForm && (
         <div style={{ background: '#1a1a1a', borderRadius: '10px', padding: '1.5rem', marginBottom: '1.5rem', border: '1px solid #333' }}>
-          <h3 style={{ marginBottom: '1rem', fontSize: '1rem' }}>Новая позиция</h3>
+          <h3 style={{ marginBottom: '1rem', fontSize: '1rem' }}>{editItem ? 'Редактировать позицию' : 'Новая позиция'}</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 1rem' }}>
             <input style={inputStyle} placeholder="Название" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             <input style={inputStyle} placeholder="Цена (₽)" type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
-            <input style={inputStyle} placeholder="Категория" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+            <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+              {FOOD_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
           {error && <div style={{ color: '#ff6b6b', fontSize: '0.85rem', marginBottom: '0.7rem' }}>{error}</div>}
           <div style={{ display: 'flex', gap: '0.7rem' }}>
-            <button onClick={createItem} style={btnPrimary}>Добавить</button>
-            <button onClick={() => setShowForm(false)} style={btnSecondary}>Отмена</button>
+            <button onClick={saveItem} style={btnPrimary}>{editItem ? 'Сохранить' : 'Добавить'}</button>
+            <button onClick={() => { setShowForm(false); setEditItem(null); }} style={btnSecondary}>Отмена</button>
           </div>
         </div>
       )}
@@ -625,7 +645,10 @@ function MenuTab() {
               <div style={{ fontWeight: '600', marginBottom: '0.3rem' }}>{item.name}</div>
               <div style={{ color: '#e50914', fontWeight: '700', marginBottom: '0.5rem' }}>{item.price} ₽</div>
               <div style={{ color: '#666', fontSize: '0.8rem', marginBottom: '0.7rem' }}>{item.category}</div>
-              <button onClick={() => deleteItem(item.id)} style={{ ...btnDanger, width: '100%' }}>Удалить</button>
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                <button onClick={() => openEdit(item)} style={{ ...btnSecondary, flex: 1, fontSize: '0.8rem', padding: '0.3rem 0.5rem' }}>Изменить</button>
+                <button onClick={() => deleteItem(item.id)} style={{ ...btnDanger, flex: 1 }}>Удалить</button>
+              </div>
             </div>
           ))}
         </div>
@@ -638,7 +661,10 @@ function MenuTab() {
                 <div key={item.id} style={{ background: '#1a1a1a', borderRadius: '8px', padding: '1rem', border: '1px solid #2a2a2a' }}>
                   <div style={{ fontWeight: '600', marginBottom: '0.3rem' }}>{item.name}</div>
                   <div style={{ color: '#e50914', fontWeight: '700', marginBottom: '0.7rem' }}>{item.price} ₽</div>
-                  <button onClick={() => deleteItem(item.id)} style={{ ...btnDanger, width: '100%' }}>Удалить</button>
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <button onClick={() => openEdit(item)} style={{ ...btnSecondary, flex: 1, fontSize: '0.8rem', padding: '0.3rem 0.5rem' }}>Изменить</button>
+                    <button onClick={() => deleteItem(item.id)} style={{ ...btnDanger, flex: 1 }}>Удалить</button>
+                  </div>
                 </div>
               ))}
             </div>

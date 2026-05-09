@@ -30,8 +30,29 @@ public class FoodMenuController {
      * ADMIN: Add a new food item to the menu
      */
     @PostMapping
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
     public ResponseEntity<FoodItemDto> addFoodItem(@Valid @RequestBody FoodItemDto dto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(foodMenuService.addFoodItem(dto));
+    }
+
+    /**
+     * ADMIN: Update a food item
+     */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<FoodItemDto> updateFoodItem(
+            @PathVariable Long id,
+            @Valid @RequestBody FoodItemDto dto) {
+        return ResponseEntity.ok(foodMenuService.updateFoodItem(id, dto));
+    }
+
+    /**
+     * ADMIN: Delete a food item
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public ResponseEntity<Void> deleteFoodItem(@PathVariable Long id) {
+        foodMenuService.deleteFoodItem(id);
+        return ResponseEntity.noContent().build();
     }
 }

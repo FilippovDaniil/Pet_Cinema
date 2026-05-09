@@ -1,5 +1,6 @@
 package com.cinema.auth.controller;
 
+import com.cinema.auth.dto.UpdateProfileRequest;
 import com.cinema.auth.service.AuthService;
 import com.cinema.dto.auth.AuthRequest;
 import com.cinema.dto.auth.AuthResponse;
@@ -11,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -48,10 +50,24 @@ public class AuthController {
         if (!StringUtils.hasText(authorizationHeader) || !authorizationHeader.startsWith("Bearer ")) {
             return ResponseEntity.badRequest().build();
         }
-        // The refresh token is passed as the Bearer token in the Authorization header for logout
         String refreshToken = authorizationHeader.substring(7);
         log.info("Logout request");
         authService.logout(refreshToken);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<UserDto> getMe(Authentication authentication) {
+        Long userId = Long.parseLong(authentication.getName());
+        return ResponseEntity.ok(authService.getProfile(userId));
+    }
+
+    @PatchMapping("/me")
+    public ResponseEntity<UserDto> updateMe(
+            @RequestBody UpdateProfileRequest request,
+            Authentication authentication) {
+        Long userId = Long.parseLong(authentication.getName());
+        UserDto updated = authService.updateProfile(userId, request.getUsername(), request.getEmail());
+        return ResponseEntity.ok(updated);
     }
 }

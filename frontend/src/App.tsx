@@ -12,6 +12,7 @@ import SupportPage from './pages/SupportPage';
 import AdminPage from './pages/AdminPage';
 import SellerPage from './pages/SellerPage';
 import FoodMenuPage from './pages/FoodMenuPage';
+import OrdersPage from './pages/OrdersPage';
 
 function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?: string[] }) {
   const { user, isAuthenticated } = useAuth();
@@ -52,6 +53,11 @@ export default function App() {
               </ProtectedRoute>
             } />
             <Route path="food" element={<FoodMenuPage />} />
+            <Route path="orders" element={
+              <ProtectedRoute>
+                <OrdersPage />
+              </ProtectedRoute>
+            } />
             <Route path="seller" element={
               <ProtectedRoute roles={['ROLE_SELLER']}>
                 <SellerPage />

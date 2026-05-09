@@ -172,6 +172,36 @@ public class AuthService {
         log.info("User logged out, refresh token revoked");
     }
 
+    @Transactional(readOnly = true)
+    public UserDto getProfile(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId.toString()));
+        return mapToUserDto(user);
+    }
+
+    @Transactional
+    public UserDto updateProfile(Long userId, String newUsername, String newEmail) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId.toString()));
+
+        if (newUsername != null && !newUsername.isBlank() && !newUsername.equals(user.getUsername())) {
+            if (userRepository.existsByUsername(newUsername)) {
+                throw new IllegalArgumentException("Username '" + newUsername + "' is already taken");
+            }
+            user.setUsername(newUsername);
+        }
+        if (newEmail != null && !newEmail.isBlank() && !newEmail.equals(user.getEmail())) {
+            if (userRepository.existsByEmail(newEmail)) {
+                throw new IllegalArgumentException("Email '" + newEmail + "' is already registered");
+            }
+            user.setEmail(newEmail);
+        }
+
+        User saved = userRepository.save(user);
+        log.info("Profile updated for user {}", userId);
+        return mapToUserDto(saved);
+    }
+
     private UserDto mapToUserDto(User user) {
         return UserDto.builder()
                 .id(user.getId())
