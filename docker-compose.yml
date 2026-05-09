@@ -204,6 +204,8 @@ services:
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
     networks:
       - cinema-network
+    depends_on:
+      - loki
 
   # ============ MICROSERVICES ============
   service-discovery:
@@ -211,6 +213,9 @@ services:
       context: .
       dockerfile: service-discovery/Dockerfile
     container_name: cinema-eureka
+    labels:
+      logging: "cinema"
+      logging_jobname: "cinema"
     ports:
       - "8761:8761"
     networks:
@@ -226,6 +231,9 @@ services:
       context: .
       dockerfile: api-gateway/Dockerfile
     container_name: cinema-gateway
+    labels:
+      logging: "cinema"
+      logging_jobname: "cinema"
     ports:
       - "8080:8080"
     environment:
@@ -248,6 +256,9 @@ services:
       context: .
       dockerfile: auth-service/Dockerfile
     container_name: cinema-auth
+    labels:
+      logging: "cinema"
+      logging_jobname: "cinema"
     environment:
       DB_HOST: postgres-auth
       DB_PORT: 5432
@@ -273,6 +284,9 @@ services:
       context: .
       dockerfile: movie-service/Dockerfile
     container_name: cinema-movie
+    labels:
+      logging: "cinema"
+      logging_jobname: "cinema"
     environment:
       DB_HOST: postgres-movie
       DB_PORT: 5432
@@ -299,6 +313,9 @@ services:
       context: .
       dockerfile: hall-service/Dockerfile
     container_name: cinema-hall
+    labels:
+      logging: "cinema"
+      logging_jobname: "cinema"
     environment:
       DB_HOST: postgres-hall
       DB_PORT: 5432
@@ -322,6 +339,9 @@ services:
       context: .
       dockerfile: order-service/Dockerfile
     container_name: cinema-order
+    labels:
+      logging: "cinema"
+      logging_jobname: "cinema"
     environment:
       DB_HOST: postgres-order
       DB_PORT: 5432
@@ -346,6 +366,9 @@ services:
       context: .
       dockerfile: support-service/Dockerfile
     container_name: cinema-support
+    labels:
+      logging: "cinema"
+      logging_jobname: "cinema"
     environment:
       DB_HOST: postgres-support
       DB_PORT: 5432
@@ -368,6 +391,9 @@ services:
       context: .
       dockerfile: notification-service/Dockerfile
     container_name: cinema-notification
+    labels:
+      logging: "cinema"
+      logging_jobname: "cinema"
     environment:
       DB_HOST: postgres-notification
       DB_PORT: 5432
@@ -392,6 +418,9 @@ services:
       context: .
       dockerfile: payment-simulator/Dockerfile
     container_name: cinema-payment-sim
+    labels:
+      logging: "cinema"
+      logging_jobname: "cinema"
     environment:
       EUREKA_HOST: service-discovery
       EUREKA_PORT: 8761
