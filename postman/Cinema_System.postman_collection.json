@@ -1,0 +1,1526 @@
+{
+  "info": {
+    "_postman_id": "cinema-system-v1-collection",
+    "name": "Cinema System API",
+    "description": "Полная коллекция для тестирования всех микросервисов Cinema System через API Gateway.\n\n**Запуск системы:**\n```\ndocker-compose up --build\n```\nДождитесь старта (~2-3 мин), затем выполните один из Login-запросов — токены сохранятся автоматически.\n\n**Тестовые пользователи (DataLoader):**\n- `client1` / `password` → ROLE_CLIENT\n- `seller1` / `password` → ROLE_SELLER\n- `admin1` / `password` → ROLE_ADMIN\n\n**Коллекция использует переменные:**\n- `baseUrl` — http://localhost:8080\n- `accessToken` — заполняется автоматически после Login\n- `refreshToken` — заполняется автоматически после Login",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "refreshToken", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth Service",
+      "description": "Аутентификация, регистрация, управление токенами. Порт 8081 (через Gateway: 8080/api/auth)",
+      "item": [
+        {
+          "name": "Register (новый пользователь)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"testuser\",\n  \"email\": \"testuser@example.com\",\n  \"password\": \"password\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "description": "Регистрация нового пользователя. Роль по умолчанию — ROLE_CLIENT. Возвращает UserDto (201)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('Response has id and username', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('id');",
+                  "    pm.expect(json).to.have.property('username');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login — client1",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"client1\",\n  \"password\": \"password\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Войти как клиент. Токены автоматически сохраняются в переменные коллекции."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.accessToken) {",
+                  "    pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', json.refreshToken);",
+                  "    console.log('✅ Tokens saved for client1');",
+                  "}",
+                  "pm.test('Response has tokens', () => {",
+                  "    pm.expect(json).to.have.property('accessToken');",
+                  "    pm.expect(json).to.have.property('refreshToken');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login — seller1",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"seller1\",\n  \"password\": \"password\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Войти как продавец (ROLE_SELLER). Токены сохраняются в переменные коллекции."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.accessToken) {",
+                  "    pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', json.refreshToken);",
+                  "    console.log('✅ Tokens saved for seller1');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login — admin1",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin1\",\n  \"password\": \"password\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Войти как администратор (ROLE_ADMIN). Токены сохраняются в переменные коллекции."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.accessToken) {",
+                  "    pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', json.refreshToken);",
+                  "    console.log('✅ Tokens saved for admin1');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "refresh"]
+            },
+            "description": "Обновление пары токенов. Старый refresh-токен аннулируется (ротация). Новые токены сохраняются."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.accessToken) {",
+                  "    pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', json.refreshToken);",
+                  "    console.log('✅ Tokens refreshed');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "logout"]
+            },
+            "description": "Выход. Refresh-токен помещается в Redis blacklist. Требует Authorization: Bearer."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('accessToken', '');",
+                  "pm.collectionVariables.set('refreshToken', '');",
+                  "console.log('Tokens cleared');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Получить профиль текущего авторизованного пользователя. Требует токен."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Has user fields', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('id');",
+                  "    pm.expect(json).to.have.property('username');",
+                  "    pm.expect(json).to.have.property('role');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update My Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"client1_updated\",\n  \"email\": \"client1_new@example.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Обновить username и/или email текущего пользователя."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Movie Service",
+      "description": "Фильмы, жанры, отзывы, комментарии. Порт 8082 (через Gateway: 8080/api/movies, /api/genres)",
+      "item": [
+        {
+          "name": "Жанры",
+          "item": [
+            {
+              "name": "Get All Genres",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/genres",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "genres"]
+                },
+                "description": "Получить все жанры. Публичный эндпоинт. DataLoader создаёт: Action(1), Drama(2), Comedy(3)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Response is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Create Genre (ADMIN)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Thriller\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/genres",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "genres"]
+                },
+                "description": "Создать жанр. Требует ROLE_ADMIN. Логин как admin1 перед вызовом."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Фильмы",
+          "item": [
+            {
+              "name": "Get All Movies",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/movies?page=0&size=10",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "movies"],
+                  "query": [
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "10" },
+                    { "key": "genre", "value": "", "disabled": true },
+                    { "key": "type", "value": "", "disabled": true },
+                    { "key": "durationMax", "value": "", "disabled": true }
+                  ]
+                },
+                "description": "Получить все фильмы с пагинацией. Публичный эндпоинт. Кешируется в Redis 10 мин."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('PageResponse structure', () => {",
+                      "    const json = pm.response.json();",
+                      "    pm.expect(json).to.have.property('content');",
+                      "    pm.expect(json).to.have.property('totalElements');",
+                      "    pm.expect(json.content).to.be.an('array');",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get All Movies (с фильтрами)",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/movies?genre=Action&type=THREE_D&durationMax=150&page=0&size=5",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "movies"],
+                  "query": [
+                    { "key": "genre", "value": "Action" },
+                    { "key": "type", "value": "THREE_D" },
+                    { "key": "durationMax", "value": "150" },
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "5" }
+                  ]
+                },
+                "description": "Фильтрация по жанру, типу (TWO_D / THREE_D / FIVE_D) и максимальной длительности."
+              }
+            },
+            {
+              "name": "Get Movie by ID",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/movies/1",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "movies", "1"]
+                },
+                "description": "Получить фильм с отзывами, комментариями и средним рейтингом. DataLoader: ID 1-5."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Has movie fields', () => {",
+                      "    const json = pm.response.json();",
+                      "    pm.expect(json).to.have.property('id');",
+                      "    pm.expect(json).to.have.property('title');",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Create Movie (ADMIN)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"Тестовый фильм\",\n  \"description\": \"Описание тестового фильма для проверки API\",\n  \"posterUrl\": \"https://example.com/poster.jpg\",\n  \"durationMinutes\": 120,\n  \"type\": \"TWO_D\",\n  \"genreIds\": [1, 2]\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/movies",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "movies"]
+                },
+                "description": "Создать фильм. Требует ROLE_ADMIN. type: TWO_D | THREE_D | FIVE_D. genreIds из /api/genres. Публикует MovieUpdateEvent в Kafka → сброс Redis кеша."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Update Movie (ADMIN)",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"Звёздные войны (обновлено)\",\n  \"description\": \"Обновлённое описание\",\n  \"posterUrl\": \"https://example.com/poster_new.jpg\",\n  \"durationMinutes\": 135,\n  \"type\": \"THREE_D\",\n  \"genreIds\": [1]\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/movies/1",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "movies", "1"]
+                },
+                "description": "Обновить фильм по ID. Требует ROLE_ADMIN. Публикует MovieUpdateEvent → сброс Redis кеша."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Delete Movie (ADMIN)",
+              "request": {
+                "method": "DELETE",
+                "url": {
+                  "raw": "{{baseUrl}}/api/movies/6",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "movies", "6"]
+                },
+                "description": "Удалить фильм. Требует ROLE_ADMIN. ID 1-5 созданы DataLoader-ом — используйте фильм созданный вами (например ID 6)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 204 No Content', () => pm.response.to.have.status(204));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Отзывы и комментарии",
+          "item": [
+            {
+              "name": "Add Review (CLIENT)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"rating\": 5,\n  \"comment\": \"Отличный фильм, рекомендую всем!\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/movies/1/reviews",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "movies", "1", "reviews"]
+                },
+                "description": "Добавить отзыв к фильму. Требует ROLE_CLIENT. rating: 1-5. Один отзыв на фильм от пользователя."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Add Comment (CLIENT)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"text\": \"Это мой любимый фильм!\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/movies/1/comments",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "movies", "1", "comments"]
+                },
+                "description": "Добавить комментарий к фильму. Требует ROLE_CLIENT."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Hall Service",
+      "description": "Залы, дополнительные услуги, сеансы. Порт 8083 (через Gateway: 8080/api/halls, /api/sessions)",
+      "item": [
+        {
+          "name": "Залы",
+          "item": [
+            {
+              "name": "Get All Halls",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/halls",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "halls"]
+                },
+                "description": "Получить все залы. Публичный. DataLoader: ID 1(NORMAL), 2(VIP), 3(THREE_D), 4(FIVE_D)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Response is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get Hall by ID",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/halls/2",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "halls", "2"]
+                },
+                "description": "Зал 2 — VIP, 8 рядов × 10 мест."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Create Hall (ADMIN)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Зал Тест\",\n  \"type\": \"NORMAL\",\n  \"rowsCount\": 8,\n  \"seatsPerRow\": 12,\n  \"description\": \"Тестовый зал\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/halls",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "halls"]
+                },
+                "description": "Создать зал. Требует ROLE_ADMIN. type: NORMAL | VIP | THREE_D | FIVE_D."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Update Hall (ADMIN)",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Зал Тест (обновлён)\",\n  \"type\": \"VIP\",\n  \"rowsCount\": 10,\n  \"seatsPerRow\": 15,\n  \"description\": \"Обновлённый зал\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/halls/5",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "halls", "5"]
+                },
+                "description": "Обновить зал по ID. Требует ROLE_ADMIN. Используйте созданный вами зал (ID 5+)."
+              }
+            },
+            {
+              "name": "Delete Hall (ADMIN)",
+              "request": {
+                "method": "DELETE",
+                "url": {
+                  "raw": "{{baseUrl}}/api/halls/5",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "halls", "5"]
+                },
+                "description": "Удалить зал. Требует ROLE_ADMIN."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 204 No Content', () => pm.response.to.have.status(204));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get Extra Services for Hall",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/halls/2/extra-services",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "halls", "2", "extra-services"]
+                },
+                "description": "Получить доп.услуги зала. Публичный. Зал 2(VIP): виброкресло 50р, официант 100р. Зал 3: 3D-очки 30р. Зал 4: вода 40р, ветродуй 40р."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Response is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Add Extra Service to Hall (ADMIN)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Мягкий плед\",\n  \"price\": 75.00\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/halls/1/extra-services",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "halls", "1", "extra-services"]
+                },
+                "description": "Добавить доп.услугу к залу. Требует ROLE_ADMIN."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Сеансы",
+          "item": [
+            {
+              "name": "Get All Sessions",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/sessions",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "sessions"]
+                },
+                "description": "Получить все сеансы. Публичный. DataLoader создаёт сеансы на 7 дней вперёд в 12:00 и 18:00 для movieId 1-5 по кругу."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Response is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get Sessions (с фильтрами)",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/sessions?movieId=1&hallId=1&from=2026-05-10 00:00:00&to=2026-05-20 23:59:59",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "sessions"],
+                  "query": [
+                    { "key": "movieId", "value": "1" },
+                    { "key": "hallId", "value": "1" },
+                    { "key": "from", "value": "2026-05-10 00:00:00" },
+                    { "key": "to", "value": "2026-05-20 23:59:59" }
+                  ]
+                },
+                "description": "Фильтрация сеансов по movieId, hallId, диапазону дат. Формат: yyyy-MM-dd HH:mm:ss. Все параметры опциональны."
+              }
+            },
+            {
+              "name": "Get Session by ID",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/sessions/1",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "sessions", "1"]
+                },
+                "description": "Получить сеанс по ID. Используется order-service для получения basePrice через Eureka lb://hall-service."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Has basePrice', () => {",
+                      "    const json = pm.response.json();",
+                      "    pm.expect(json).to.have.property('basePrice');",
+                      "    pm.expect(json).to.have.property('hallId');",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get Extra Services for Session",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/sessions/1/extra-services",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "sessions", "1", "extra-services"]
+                },
+                "description": "Получить доп.услуги зала для конкретного сеанса. Полезно для BookingPage."
+              }
+            },
+            {
+              "name": "Create Session (ADMIN)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"movieId\": 1,\n  \"hallId\": 1,\n  \"startTime\": \"2026-05-25 12:00:00\",\n  \"endTime\": \"2026-05-25 14:00:00\",\n  \"basePrice\": 350.00\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/sessions",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "sessions"]
+                },
+                "description": "Создать сеанс. Требует ROLE_ADMIN. movieId — Long (нет FK, изоляция микросервисов). Формат времени: yyyy-MM-dd HH:mm:ss."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Update Session (ADMIN)",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"movieId\": 2,\n  \"hallId\": 2,\n  \"startTime\": \"2026-05-25 15:00:00\",\n  \"endTime\": \"2026-05-25 17:30:00\",\n  \"basePrice\": 500.00\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/sessions/1",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "sessions", "1"]
+                },
+                "description": "Обновить сеанс. Требует ROLE_ADMIN."
+              }
+            },
+            {
+              "name": "Delete Session (ADMIN)",
+              "request": {
+                "method": "DELETE",
+                "url": {
+                  "raw": "{{baseUrl}}/api/sessions/1",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "sessions", "1"]
+                },
+                "description": "Удалить сеанс. Требует ROLE_ADMIN. Внимание: ID 1+ создан DataLoader — влияет на существующие заказы."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 204 No Content', () => pm.response.to.have.status(204));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Order Service",
+      "description": "Заказы, билеты, меню. Порт 8084 (через Gateway: 8080/api/orders, /api/food-menu)",
+      "item": [
+        {
+          "name": "Меню (Food Menu)",
+          "item": [
+            {
+              "name": "Get Food Menu",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/food-menu",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "food-menu"]
+                },
+                "description": "Публичное меню. DataLoader: Попкорн(1,250р), Кола(2,150р), Начос(3,200р), Вода(4,80р), Хот-дог(5,180р), Капкейк(6,120р)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Response is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Add Food Item (ADMIN)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Мороженое\",\n  \"price\": 130.00,\n  \"category\": \"OTHER\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/food-menu",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "food-menu"]
+                },
+                "description": "Добавить позицию в меню. Требует ROLE_ADMIN. category: DRINK | POPCORN | SNACK | OTHER."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Update Food Item (ADMIN)",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Попкорн большой\",\n  \"price\": 300.00,\n  \"category\": \"POPCORN\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/food-menu/1",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "food-menu", "1"]
+                },
+                "description": "Обновить позицию меню. Требует ROLE_ADMIN."
+              }
+            },
+            {
+              "name": "Delete Food Item (ADMIN)",
+              "request": {
+                "method": "DELETE",
+                "url": {
+                  "raw": "{{baseUrl}}/api/food-menu/7",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "food-menu", "7"]
+                },
+                "description": "Удалить позицию меню. Требует ROLE_ADMIN. Используйте ID добавленной вами позиции (7+)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 204 No Content', () => pm.response.to.have.status(204));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Заказы",
+          "item": [
+            {
+              "name": "Create Ticket Order — Client (async оплата)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"sessionId\": 1,\n  \"seatRow\": 3,\n  \"seatNumber\": 5,\n  \"extraServiceIds\": []\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/orders/ticket",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "orders", "ticket"]
+                },
+                "description": "Заказ билета клиентом. Требует авторизацию. Поток: Order(PENDING) → Kafka payment-request → payment-simulator ждёт 3 сек → POST webhook/payment → Order(PAID) → Ticket создаётся → Kafka ticket-purchase → уведомление.\n\nextraServiceIds: ID доп.услуг из /api/sessions/{id}/extra-services"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                      "pm.test('Order is PENDING initially', () => {",
+                      "    const json = pm.response.json();",
+                      "    pm.expect(json.status).to.equal('PENDING');",
+                      "    console.log('Order ID:', json.id, '— ждите 3 сек для оплаты payment-simulator');",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Create Ticket Order — Seller (немедленная оплата)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"clientId\": 1,\n  \"sessionId\": 1,\n  \"seatRow\": 5,\n  \"seatNumber\": 8,\n  \"extraServiceIds\": []\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/orders/ticket/by-seller",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "orders", "ticket", "by-seller"]
+                },
+                "description": "Продажа билета продавцом. Требует ROLE_SELLER или ROLE_ADMIN. Заказ сразу PAID, Ticket создаётся немедленно. clientId=1 (client1 из DataLoader). Логин как seller1 перед вызовом."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                      "pm.test('Order is immediately PAID', () => {",
+                      "    const json = pm.response.json();",
+                      "    pm.expect(json.status).to.equal('PAID');",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Create Food Order — Seller",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"clientId\": 1,\n  \"items\": [\n    { \"foodItemId\": 1, \"quantity\": 2 },\n    { \"foodItemId\": 2, \"quantity\": 1 }\n  ]\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/orders/food",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "orders", "food"]
+                },
+                "description": "Заказ еды продавцом для клиента. Требует ROLE_SELLER или ROLE_ADMIN. Сразу PAID. foodItemId: 1(Попкорн), 2(Кола), 3(Начос), 4(Вода), 5(Хот-дог), 6(Капкейк)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                      "pm.test('Order is PAID', () => pm.expect(pm.response.json().status).to.equal('PAID'));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Create Food Order — Client",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"items\": [\n    { \"foodItemId\": 3, \"quantity\": 1 },\n    { \"foodItemId\": 4, \"quantity\": 2 }\n  ]\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/orders/food/client",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "orders", "food", "client"]
+                },
+                "description": "Заказ еды клиентом. Требует ROLE_CLIENT. Логин как client1 перед вызовом."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get My Orders",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/orders/my",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "orders", "my"]
+                },
+                "description": "История заказов текущего авторизованного пользователя. Требует токен."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Response is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get Order by ID",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/orders/1",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "orders", "1"]
+                },
+                "description": "Получить заказ по ID. Доступен владельцу заказа, продавцу (sellerId) и admin."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Has order fields', () => {",
+                      "    const json = pm.response.json();",
+                      "    pm.expect(json).to.have.property('status');",
+                      "    pm.expect(json).to.have.property('totalPrice');",
+                      "    pm.expect(json).to.have.property('items');",
+                      "});"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Payment Webhook (симуляция)",
+              "request": {
+                "auth": { "type": "noauth" },
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"orderId\": 1,\n  \"status\": \"SUCCESS\",\n  \"transactionId\": \"txn-manual-test-001\"\n}",
+                  "options": { "raw": { "language": "json" } }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/orders/webhook/payment",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "orders", "webhook", "payment"]
+                },
+                "description": "Публичный вебхук для симулятора оплаты. В норме вызывается автоматически payment-simulator через 3 сек после создания заказа. Можно вызвать вручную для заказа со статусом PENDING. status: SUCCESS | FAILED."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Support Service",
+      "description": "Тикеты поддержки и сообщения. Порт 8085 (через Gateway: 8080/api/support)",
+      "item": [
+        {
+          "name": "Create Support Ticket",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Проблема с бронированием билета\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/support/tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "support", "tickets"]
+            },
+            "description": "Создать тикет поддержки. Требует авторизацию. clientId берётся из токена автоматически."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('Ticket status is OPEN', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.status).to.equal('OPEN');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get My Tickets",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/support/tickets/my",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "support", "tickets", "my"]
+            },
+            "description": "Получить тикеты текущего пользователя. DataLoader создаёт демо-тикет для userId=1 (client1)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get All Tickets (ADMIN)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/support/tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "support", "tickets"]
+            },
+            "description": "Все тикеты системы. Требует ROLE_ADMIN. Логин как admin1."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send Message in Ticket",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Здравствуйте! У меня проблема с заказом #1, нажата кнопка оплаты дважды.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/support/tickets/1/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "support", "tickets", "1", "messages"]
+            },
+            "description": "Отправить сообщение в тикет. Требует авторизацию. CLIENT может отправлять только в свои тикеты. ADMIN может отвечать в любой. Публикует SupportMessageEvent → notification-service уведомляет получателя."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Ticket Messages",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/support/tickets/1/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "support", "tickets", "1", "messages"]
+            },
+            "description": "Получить сообщения тикета. DataLoader создаёт 2 сообщения для тикета ID=1."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Admin to Ticket (ADMIN)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"adminId\": 3\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/support/tickets/1/assign",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "support", "tickets", "1", "assign"]
+            },
+            "description": "Назначить администратора на тикет. Требует ROLE_ADMIN. adminId=3 — это admin1 из DataLoader."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Admin assigned', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.adminId).to.not.be.null;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Close Ticket (ADMIN)",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{baseUrl}}/api/support/tickets/1/close",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "support", "tickets", "1", "close"]
+            },
+            "description": "Закрыть тикет. Требует ROLE_ADMIN. Статус меняется OPEN → CLOSED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Ticket is CLOSED', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.status).to.equal('CLOSED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Notification Service",
+      "description": "Уведомления пользователя. Порт 8086 (через Gateway: 8080/api/notifications). Уведомления создаются автоматически через Kafka (покупка билета, сообщение в поддержке).",
+      "item": [
+        {
+          "name": "Get My Notifications",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications"]
+            },
+            "description": "Получить уведомления текущего пользователя. Требует токен. Уведомления появляются после: покупки билета (топик ticket-purchase), ответа в тикете поддержки (топик support-message)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark Notification as Read",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/1/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notifications", "1", "read"]
+            },
+            "description": "Отметить уведомление как прочитанное. Требует токен. Поле read меняется false → true."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Notification is read', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.read).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
