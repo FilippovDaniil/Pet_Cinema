@@ -33,12 +33,7 @@ public class JwtUtils {
     }
 
     public Long extractUserId(String token) {
-        Claims claims = parseClaims(token);
-        Object userIdObj = claims.get("userId");
-        if (userIdObj instanceof Number) {
-            return ((Number) userIdObj).longValue();
-        }
-        return Long.parseLong(userIdObj.toString());
+        return Long.parseLong(parseClaims(token).getSubject());
     }
 
     @SuppressWarnings("unchecked")

@@ -80,6 +80,7 @@ export default function Layout() {
         </Link>
         <div style={navLinksStyle}>
           <Link to="/" style={linkStyle}>Афиша</Link>
+          <Link to="/food" style={linkStyle}>Меню</Link>
           {isAuthenticated && (
             <Link to="/profile" style={linkStyle}>Профиль</Link>
           )}
