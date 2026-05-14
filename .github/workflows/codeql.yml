@@ -1,0 +1,111 @@
+name: CodeQL Security Analysis
+
+# Статический анализ безопасности кода (SAST — Static Application Security Testing)
+# Ищет уязвимости: SQL injection, XSS, path traversal, небезопасная десериализация и др.
+on:
+  push:
+    branches: [master]
+  schedule:
+    # Еженедельный запуск по расписанию: каждый понедельник в 08:00 UTC
+    # Cron: минута час день-месяца месяц день-недели
+    - cron: '0 8 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # JOB: CodeQL анализ Java-кода
+  # GitHub CodeQL — официальный SAST движок GitHub, бесплатен для публичных репо
+  # Анализирует байткод: компилирует проект и строит граф потоков данных
+  # ══════════════════════════════════════════════════════════════════════════════
+  analyze-java:
+    name: "CodeQL — Java"
+    runs-on: ubuntu-latest
+
+    permissions:
+      # Нужно для чтения кода и загрузки результатов в GitHub Security tab
+      security-events: write
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-codeql-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-codeql-
+            ${{ runner.os }}-gradle-
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # Инициализируем CodeQL: создаёт базу данных для анализа
+      # languages: java-kotlin — охватывает и Java, и Kotlin-файлы (build.gradle.kts)
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          # queries: security-and-quality — расширенный набор запросов
+          # (по умолчанию — только security; quality добавляет code smells)
+          queries: security-and-quality
+
+      # CodeQL компилирует проект сам (autobuild) чтобы проанализировать байткод
+      # Альтернатива: явная команда сборки через build-command
+      # -x test: пропускаем тесты — они не нужны для анализа безопасности
+      - name: Build project for CodeQL
+        run: ./gradlew assemble -x test --no-daemon --parallel
+
+      # Запускаем анализ и загружаем результаты в GitHub Security → Code Scanning Alerts
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java-kotlin"
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # JOB: CodeQL анализ JavaScript/TypeScript фронтенда
+  # Отдельный job: фронтенд не нужно компилировать для JS/TS анализа
+  # ══════════════════════════════════════════════════════════════════════════════
+  analyze-frontend:
+    name: "CodeQL — TypeScript"
+    runs-on: ubuntu-latest
+
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # Для JS/TS CodeQL не нужна компиляция — анализирует исходный код напрямую
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-and-quality
+
+      # autobuild для JS/TS — просто сканирует файлы (компиляция не нужна)
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"

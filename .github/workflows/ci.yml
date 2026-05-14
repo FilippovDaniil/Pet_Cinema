@@ -1,0 +1,95 @@
+name: CI
+
+# Запускается при каждом пуше в master и при открытии/обновлении PR в master
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+# Отменяет предыдущий запуск того же workflow для той же ветки/PR
+# Экономит минуты Actions: если запушили 2 коммита подряд — первый CI отменяется
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # JOB 1: Сборка и тесты всех Java-сервисов
+  # ══════════════════════════════════════════════════════════════════════════════
+  backend-test:
+    name: "Backend — Build & Test"
+    runs-on: ubuntu-latest
+    # ubuntu-latest: Docker уже установлен → Testcontainers (PostgreSQL) работают без настройки
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'   # Eclipse Temurin — тот же образ что в Dockerfile
+
+      # Кешируем ~/.gradle/caches и ~/.gradle/wrapper
+      # Ключ = хеш всех *.gradle.kts файлов → при изменении зависимостей кеш сбрасывается
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # --parallel   : модули собираются и тестируются параллельно (ускорение ~2-3x)
+      # --no-daemon  : в CI Gradle daemon не нужен (процесс всё равно завершится)
+      # --continue   : не останавливаться при первой ошибке — собрать отчёты по ВСЕМ сервисам
+      - name: Run all tests
+        run: ./gradlew test --parallel --no-daemon --continue
+
+      # Загружаем HTML-отчёты тестов как артефакт — только если хоть один тест упал
+      # Отчёты видны во вкладке "Artifacts" в интерфейсе GitHub Actions
+      - name: Upload test reports on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-reports-${{ github.run_id }}
+          path: '**/build/reports/tests/'
+          retention-days: 7   # Храним 7 дней, затем GitHub удаляет автоматически
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # JOB 2: TypeScript-проверка и production-сборка фронтенда
+  # ══════════════════════════════════════════════════════════════════════════════
+  frontend-build:
+    name: "Frontend — TypeScript Check & Build"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          # Кешируем node_modules по хешу package.json (lock-файл в проекте не используется)
+          cache: 'npm'
+          cache-dependency-path: frontend/package.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install
+
+      # npm run build = tsc && vite build
+      # tsc — проверяет типы TypeScript (любая ошибка типов → ненулевой exit code → job fails)
+      # vite build — собирает production bundle (dist/)
+      - name: TypeScript type check + production build
+        working-directory: frontend
+        run: npm run build

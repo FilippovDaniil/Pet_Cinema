@@ -1,0 +1,82 @@
+name: Docker Build
+
+# Запускается только при пуше в master (не на PRs — сборка Docker медленная)
+# Цель: убедиться что все Dockerfile валидны и компилируются без ошибок
+# Образы НЕ пушатся в registry — только локальная проверка
+on:
+  push:
+    branches: [master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # JOB: Сборка Docker-образов всех Java-сервисов
+  # Каждый сервис собирается параллельно через matrix strategy
+  # ══════════════════════════════════════════════════════════════════════════════
+  build-backend-images:
+    name: "Build ${{ matrix.service }}"
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false   # false = продолжать сборку других сервисов даже если один упал
+      matrix:
+        service:
+          - service-discovery
+          - api-gateway
+          - auth-service
+          - movie-service
+          - hall-service
+          - order-service
+          - support-service
+          - notification-service
+          - payment-simulator
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # Настраиваем BuildKit — современный бэкенд Docker Build с лучшим кешированием
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Кешируем слои Docker между запусками по ветке
+      # type=gha — использует GitHub Actions Cache как бэкенд (бесплатно, до 10GB)
+      # mode=max — кешируем все промежуточные слои (не только финальный образ)
+      - name: Build ${{ matrix.service }} image
+        uses: docker/build-push-action@v5
+        with:
+          context: .   # Контекст = корень репозитория (Dockerfile копирует gradlew, common-dtos и т.д.)
+          file: ${{ matrix.service }}/Dockerfile
+          push: false  # Только проверяем сборку, не пушим в registry
+          tags: cinema/${{ matrix.service }}:ci
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to:   type=gha,scope=${{ matrix.service }},mode=max
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # JOB: Сборка Docker-образа фронтенда
+  # Отдельный job т.к. контекст сборки — ./frontend, а не корень репозитория
+  # ══════════════════════════════════════════════════════════════════════════════
+  build-frontend-image:
+    name: "Build frontend"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend   # Контекст фронтенда — только папка frontend/
+          file: frontend/Dockerfile
+          push: false
+          tags: cinema/frontend:ci
+          cache-from: type=gha,scope=frontend
+          cache-to:   type=gha,scope=frontend,mode=max
