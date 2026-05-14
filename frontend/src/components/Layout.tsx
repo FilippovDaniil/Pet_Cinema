@@ -64,9 +64,9 @@ export default function Layout() {
 
   // linkStyle — базовый стиль навигационной ссылки.
   const linkStyle: React.CSSProperties = {
-    color: '#ccc',             // светло-серый цвет (не ярко-белый — меньше напряжение)
+    color: '#ccc',             // светло-серый цвет
     fontSize: '0.95rem',
-    transition: 'color 0.2s', // плавная смена цвета при hover (через CSS hover нужен отдельный класс)
+    transition: 'color 0.2s', // плавная смена цвета при hover
     padding: '0.4rem 0.8rem',
     borderRadius: '4px',
   };
@@ -117,39 +117,32 @@ export default function Layout() {
           <Link to="/" style={linkStyle}>Афиша</Link>
           <Link to="/food" style={linkStyle}>Меню</Link>
 
-          {/* Условный рендеринг — ссылки только для авторизованных */}
-          {/* && оператор: если isAuthenticated = true → рендерим Link, иначе ничего */}
-          {isAuthenticated && (
-            <Link to="/orders" style={linkStyle}>Заказы</Link>
-          )}
-          {isAuthenticated && (
-            <Link to="/profile" style={linkStyle}>Профиль</Link>
-          )}
-          {isAuthenticated && (
-            <Link to="/support" style={linkStyle}>Поддержка</Link>
-          )}
+          {/* Условный рендеринг — ссылки только для авторизованных.
+              && оператор: если isAuthenticated = true → рендерим Link, иначе null */}
+          {isAuthenticated && <Link to="/orders" style={linkStyle}>Заказы</Link>}
+          {isAuthenticated && <Link to="/profile" style={linkStyle}>Профиль</Link>}
+          {isAuthenticated && <Link to="/support" style={linkStyle}>Поддержка</Link>}
 
-          {/* Ссылка администратора — только для ROLE_ADMIN */}
+          {/* Ссылка администратора — только для ROLE_ADMIN.
+              { ...linkStyle, color: '#e50914' } — spread + override: копируем все стили
+              из linkStyle и переопределяем цвет на красный. */}
           {isAdmin && (
-            {/* Spread + override: {...linkStyle, color: '#e50914'} —
-                копируем все стили из linkStyle и переопределяем цвет на красный */}
             <Link to="/admin" style={{ ...linkStyle, color: '#e50914' }}>Администратор</Link>
           )}
 
-          {/* Ссылка продавца — только для ROLE_SELLER */}
+          {/* Ссылка продавца — только для ROLE_SELLER. */}
           {isSeller && (
             <Link to="/seller" style={{ ...linkStyle, color: '#f5a623' }}>Продавец</Link>
           )}
 
-          {/* Кнопки авторизации — условный рендеринг */}
+          {/* Кнопки авторизации — условный рендеринг через тернарный оператор.
+              Авторизован → "Выйти"; не авторизован → "Войти" + "Регистрация". */}
           {isAuthenticated ? (
-            {/* Авторизован → кнопка "Выйти" */}
             <button onClick={handleLogout} style={outlineBtnStyle}>Выйти</button>
           ) : (
-            {/* Не авторизован → кнопки "Войти" и "Регистрация" */}
             <div style={{ display: 'flex', gap: '0.75rem' }}>
+              {/* Link обёртка вокруг button — переходим на /login при клике */}
               <Link to="/login">
-                {/* Link обёртка вокруг button — переходим на /login при клике */}
                 <button style={outlineBtnStyle}>Войти</button>
               </Link>
               <Link to="/register">

@@ -72,8 +72,8 @@ class SessionServiceTest {
         Session s1 = buildSession(1L, hall);
         Session s2 = buildSession(2L, hall);
 
-        // Все параметры null → сервис вызывает findByFilters(null, null, null, null)
-        when(sessionRepository.findByFilters(null, null, null, null)).thenReturn(List.of(s1, s2));
+        // Все параметры null → сервис вызывает findAll() и фильтрует active=true в Java
+        when(sessionRepository.findAll()).thenReturn(List.of(s1, s2));
 
         List<SessionDto> result = sessionService.getSessions(null, null, null, null);
 

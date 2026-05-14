@@ -3,16 +3,23 @@ import api from '../api/axios';
 import { Movie, Hall, Session, FoodItem, SupportTicket, SupportMessage, Genre, ExtraService } from '../types';
 import { useAuth } from '../context/AuthContext';
 
+// Tab — TypeScript union type (литеральный тип).
+// Ограничивает activeTab только допустимыми значениями; ошибка компиляции при опечатке.
 type Tab = 'movies' | 'halls' | 'sessions' | 'menu' | 'support';
 
+// TABS — массив объектов для рендера кнопок-вкладок.
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'movies', label: 'Фильмы' },
-  { key: 'halls', label: 'Залы' },
+  { key: 'movies',   label: 'Фильмы' },
+  { key: 'halls',    label: 'Залы' },
   { key: 'sessions', label: 'Сеансы' },
-  { key: 'menu', label: 'Меню' },
-  { key: 'support', label: 'Поддержка' },
+  { key: 'menu',     label: 'Меню' },
+  { key: 'support',  label: 'Поддержка' },
 ];
 
+// Общие стили, вынесенные на уровень модуля (не в компоненте).
+// Это позволяет переиспользовать их во всех tab-компонентах без повторения кода.
+
+// inputStyle — базовый стиль поля ввода для всех форм.
 const inputStyle: React.CSSProperties = {
   width: '100%',
   background: '#111',
@@ -24,6 +31,7 @@ const inputStyle: React.CSSProperties = {
   marginBottom: '0.7rem',
 };
 
+// btnPrimary — красная кнопка (основное действие: сохранить, создать).
 const btnPrimary: React.CSSProperties = {
   background: '#e50914',
   color: '#fff',
@@ -35,6 +43,7 @@ const btnPrimary: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+// btnSecondary — контурная серая кнопка (второстепенное действие: отмена, изменить).
 const btnSecondary: React.CSSProperties = {
   background: 'transparent',
   color: '#aaa',
@@ -46,6 +55,7 @@ const btnSecondary: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+// btnDanger — контурная красная кнопка (опасное действие: удалить).
 const btnDanger: React.CSSProperties = {
   background: 'transparent',
   color: '#e50914',
@@ -56,13 +66,15 @@ const btnDanger: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-// -------------------- MOVIES TAB --------------------
+// ==================== MOVIES TAB ====================
+// MoviesTab — управление фильмами: список + форма создания/редактирования + удаление.
 function MoviesTab() {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [genres, setGenres] = useState<Genre[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editMovie, setEditMovie] = useState<Movie | null>(null);
+  const [editMovie, setEditMovie] = useState<Movie | null>(null); // null = создание; Movie = редактирование
+  // form — контролируемое состояние всех полей формы.
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -73,19 +85,23 @@ function MoviesTab() {
   });
   const [error, setError] = useState('');
 
+  // Загружаем фильмы и жанры при монтировании.
   useEffect(() => {
     fetchMovies();
+    // Жанры нужны для чекбоксов формы; .catch(() => {}) — тихо игнорируем ошибку.
     api.get<Genre[]>('/genres').then((r) => setGenres(r.data)).catch(() => {});
   }, []);
 
   const fetchMovies = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/movies', { params: { size: 100 } });
+      const res = await api.get('/movies', { params: { size: 100 } }); // все фильмы
+      // Ответ может быть Page<Movie> (с .content) или просто Movie[].
       setMovies(res.data.content || res.data);
     } catch { setError('Ошибка загрузки'); } finally { setLoading(false); }
   };
 
+  // openEdit — открывает форму в режиме редактирования, заполняет поля данными фильма.
   const openEdit = (movie: Movie) => {
     setEditMovie(movie);
     setForm({
@@ -94,17 +110,19 @@ function MoviesTab() {
       posterUrl: movie.posterUrl,
       durationMinutes: String(movie.durationMinutes),
       type: movie.type,
-      genreIds: [],
+      genreIds: [], // жанры не предзаполняются (бэкенд вернёт текущие жанры)
     });
     setShowForm(true);
   };
 
+  // openCreate — открывает форму для создания нового фильма.
   const openCreate = () => {
-    setEditMovie(null);
+    setEditMovie(null); // сбрасываем editMovie → форма в режиме создания
     setForm({ title: '', description: '', posterUrl: '', durationMinutes: '', type: 'TWO_D', genreIds: [] });
     setShowForm(true);
   };
 
+  // handleSubmit — отправляет форму: PUT (редактирование) или POST (создание).
   const handleSubmit = async () => {
     setError('');
     const payload = {
@@ -117,22 +135,24 @@ function MoviesTab() {
     };
     try {
       if (editMovie) {
-        await api.put(`/movies/${editMovie.id}`, payload);
+        await api.put(`/movies/${editMovie.id}`, payload); // PUT = обновить
       } else {
-        await api.post('/movies', payload);
+        await api.post('/movies', payload); // POST = создать
       }
       setShowForm(false);
-      fetchMovies();
+      fetchMovies(); // перезагружаем список
     } catch (e: any) {
       setError(e.response?.data?.message || 'Ошибка при сохранении');
     }
   };
 
+  // deleteMovie — удаляет фильм после подтверждения через браузерный диалог.
   const deleteMovie = async (id: number) => {
-    if (!confirm('Удалить фильм?')) return;
+    if (!confirm('Удалить фильм?')) return; // браузерный confirm — блокирующий диалог
     try { await api.delete(`/movies/${id}`); fetchMovies(); } catch { alert('Ошибка удаления'); }
   };
 
+  // toggleGenre — добавляет/убирает жанр из списка выбранных в форме.
   const toggleGenre = (id: number) => {
     setForm((f) => ({
       ...f,
@@ -147,9 +167,11 @@ function MoviesTab() {
         <button onClick={openCreate} style={btnPrimary}>+ Добавить фильм</button>
       </div>
 
+      {/* Форма создания/редактирования — показывается при showForm. */}
       {showForm && (
         <div style={{ background: '#1a1a1a', borderRadius: '10px', padding: '1.5rem', marginBottom: '1.5rem', border: '1px solid #333' }}>
           <h3 style={{ marginBottom: '1rem', fontSize: '1rem' }}>{editMovie ? 'Редактировать фильм' : 'Новый фильм'}</h3>
+          {/* Сетка 2 колонки: основные поля слева, тип+жанры справа. */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 1rem' }}>
             <div>
               <input style={inputStyle} placeholder="Название" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
@@ -157,17 +179,19 @@ function MoviesTab() {
               <input style={inputStyle} placeholder="Длительность (мин)" type="number" value={form.durationMinutes} onChange={(e) => setForm({ ...form, durationMinutes: e.target.value })} />
             </div>
             <div>
+              {/* select: выбор типа фильма TWO_D/THREE_D/FIVE_D. */}
               <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
                 <option value="TWO_D">2D</option>
                 <option value="THREE_D">3D</option>
                 <option value="FIVE_D">5D</option>
               </select>
               <div style={{ color: '#aaa', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Жанры:</div>
+              {/* Кнопки-тоглы для жанров — красные если выбраны. */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.7rem' }}>
                 {genres.map((g) => (
                   <button
                     key={g.id}
-                    type="button"
+                    type="button" // type="button" — не отправляет форму при Enter
                     onClick={() => toggleGenre(g.id)}
                     style={{
                       padding: '3px 10px',
@@ -185,6 +209,7 @@ function MoviesTab() {
               </div>
             </div>
           </div>
+          {/* textarea для описания: resize:'vertical' — только вертикальное растягивание. */}
           <textarea
             style={{ ...inputStyle, height: '80px', resize: 'vertical' }}
             placeholder="Описание"
@@ -202,6 +227,7 @@ function MoviesTab() {
       {loading && <div style={{ color: '#aaa', padding: '2rem', textAlign: 'center' }}>⏳ Загрузка...</div>}
       {error && !showForm && <div style={{ color: '#ff6b6b', marginBottom: '1rem' }}>{error}</div>}
 
+      {/* Таблица фильмов. overflowX:'auto' — горизонтальная прокрутка на малых экранах. */}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
           <thead>
@@ -226,6 +252,7 @@ function MoviesTab() {
                 </td>
                 <td style={{ padding: '0.8rem', color: '#aaa' }}>{movie.durationMinutes} мин</td>
                 <td style={{ padding: '0.8rem', color: '#f5a623' }}>
+                  {/* toFixed(1) — один знак после запятой; '—' если рейтинга нет. */}
                   {movie.averageRating ? movie.averageRating.toFixed(1) : '—'}
                 </td>
                 <td style={{ padding: '0.8rem' }}>
@@ -243,15 +270,18 @@ function MoviesTab() {
   );
 }
 
-// -------------------- HALLS TAB --------------------
+// ==================== HALLS TAB ====================
+// HallsTab — управление залами: CRUD залов + CRUD доп.услуг.
 function HallsTab() {
   const [halls, setHalls] = useState<Hall[]>([]);
+  // extraServices: маппинг hallId → массив услуг.
   const [extraServices, setExtraServices] = useState<Record<number, ExtraService[]>>({});
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  // selectedHall — зал, для которого открыта форма добавления услуги.
   const [selectedHall, setSelectedHall] = useState<Hall | null>(null);
   const [form, setForm] = useState({ name: '', type: 'NORMAL', rowsCount: '', seatsPerRow: '', description: '' });
-  const [serviceForm, setServiceForm] = useState({ name: '', price: '' });
+  const [serviceForm, setServiceForm] = useState({ name: '', price: '' }); // форма добавления услуги
   const [error, setError] = useState('');
 
   useEffect(() => { fetchHalls(); }, []);
@@ -261,6 +291,7 @@ function HallsTab() {
     try {
       const res = await api.get<Hall[]>('/halls');
       setHalls(res.data || []);
+      // Параллельно загружаем доп.услуги для каждого зала.
       const map: Record<number, ExtraService[]> = {};
       await Promise.all((res.data || []).map(async (h) => {
         try {
@@ -295,6 +326,7 @@ function HallsTab() {
     try { await api.delete(`/halls/${id}`); fetchHalls(); } catch { alert('Ошибка'); }
   };
 
+  // addService — добавляет доп.услугу к выбранному залу.
   const addService = async () => {
     if (!selectedHall || !serviceForm.name) return;
     try {
@@ -303,11 +335,13 @@ function HallsTab() {
         price: parseFloat(serviceForm.price) || 0,
       });
       setServiceForm({ name: '', price: '' });
+      // Перезагружаем только услуги этого зала (не всю страницу).
       const r = await api.get<ExtraService[]>(`/halls/${selectedHall.id}/extra-services`);
       setExtraServices((prev) => ({ ...prev, [selectedHall.id]: r.data }));
     } catch { alert('Ошибка добавления услуги'); }
   };
 
+  // deleteService — удаляет конкретную услугу конкретного зала.
   const deleteService = async (hallId: number, serviceId: number) => {
     try {
       await api.delete(`/halls/${hallId}/extra-services/${serviceId}`);
@@ -318,9 +352,9 @@ function HallsTab() {
 
   const hallTypeBadge: Record<string, { label: string; color: string }> = {
     NORMAL: { label: 'Обычный', color: '#1a73e8' },
-    VIP: { label: 'VIP', color: '#f5a623' },
-    THREE_D: { label: '3D', color: '#0d7a4e' },
-    FIVE_D: { label: '5D', color: '#7b1fa2' },
+    VIP:    { label: 'VIP',     color: '#f5a623' },
+    THREE_D:{ label: '3D',      color: '#0d7a4e' },
+    FIVE_D: { label: '5D',      color: '#7b1fa2' },
   };
 
   return (
@@ -359,6 +393,7 @@ function HallsTab() {
 
       {loading && <div style={{ color: '#aaa', padding: '2rem', textAlign: 'center' }}>⏳ Загрузка...</div>}
 
+      {/* Карточки залов: auto-fill minmax(300px) — адаптивная сетка. */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
         {halls.map((hall) => {
           const badge = hallTypeBadge[hall.type] || { label: hall.type, color: '#444' };
@@ -374,11 +409,12 @@ function HallsTab() {
                 </div>
                 <button onClick={() => deleteHall(hall.id)} style={btnDanger}>Удалить</button>
               </div>
+              {/* rowsCount * seatsPerRow = вместимость зала. */}
               <div style={{ color: '#aaa', fontSize: '0.85rem', marginBottom: '1rem' }}>
                 {hall.rowsCount} рядов × {hall.seatsPerRow} мест = {hall.rowsCount * hall.seatsPerRow} мест
               </div>
 
-              {/* Extra Services */}
+              {/* Блок доп.услуг зала. */}
               <div style={{ borderTop: '1px solid #2a2a2a', paddingTop: '0.8rem' }}>
                 <div style={{ color: '#888', fontSize: '0.8rem', marginBottom: '0.5rem' }}>Дополнительные услуги:</div>
                 {services.map((s) => (
@@ -388,6 +424,7 @@ function HallsTab() {
                   </div>
                 ))}
 
+                {/* Форма добавления услуги — показывается только для selectedHall. */}
                 {selectedHall?.id === hall.id ? (
                   <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <input
@@ -407,6 +444,7 @@ function HallsTab() {
                     <button onClick={() => setSelectedHall(null)} style={{ ...btnSecondary, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>✕</button>
                   </div>
                 ) : (
+                  // Кнопка "Добавить услугу" — устанавливает selectedHall = текущий зал.
                   <button onClick={() => setSelectedHall(hall)} style={{ ...btnSecondary, marginTop: '0.4rem', padding: '0.3rem 0.7rem', fontSize: '0.8rem' }}>
                     + Добавить услугу
                   </button>
@@ -420,7 +458,8 @@ function HallsTab() {
   );
 }
 
-// -------------------- SESSIONS TAB --------------------
+// ==================== SESSIONS TAB ====================
+// SessionsTab — управление сеансами: создание + список + удаление.
 function SessionsTab() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [movies, setMovies] = useState<Movie[]>([]);
@@ -434,12 +473,13 @@ function SessionsTab() {
     fetchAll();
   }, []);
 
+  // fetchAll — загружает сеансы, фильмы и залы параллельно.
   const fetchAll = async () => {
     setLoading(true);
     try {
       const [sessionsRes, moviesRes, hallsRes] = await Promise.all([
         api.get('/sessions', { params: { size: 100 } }),
-        api.get('/movies', { params: { size: 100 } }),
+        api.get('/movies',   { params: { size: 100 } }),
         api.get<Hall[]>('/halls'),
       ]);
       setSessions(sessionsRes.data.content || sessionsRes.data || []);
@@ -452,12 +492,12 @@ function SessionsTab() {
     setError('');
     try {
       await api.post('/sessions', {
-        movieId: parseInt(form.movieId),
-        hallId: parseInt(form.hallId),
-        startTime: form.startTime,
-        endTime: form.endTime,
+        movieId:   parseInt(form.movieId),
+        hallId:    parseInt(form.hallId),
+        startTime: form.startTime,  // datetime-local формат: "2025-05-10T12:00"
+        endTime:   form.endTime,
         basePrice: parseFloat(form.basePrice),
-        active: form.active,
+        active:    form.active,
       });
       setShowForm(false);
       setForm({ movieId: '', hallId: '', startTime: '', endTime: '', basePrice: '', active: true });
@@ -472,8 +512,9 @@ function SessionsTab() {
     try { await api.delete(`/sessions/${id}`); fetchAll(); } catch { alert('Ошибка'); }
   };
 
+  // Вспомогательные функции для отображения имён вместо ID.
   const movieName = (id: number) => movies.find((m) => m.id === id)?.title || `#${id}`;
-  const hallName = (id: number) => halls.find((h) => h.id === id)?.name || `#${id}`;
+  const hallName  = (id: number) => halls.find((h) => h.id === id)?.name  || `#${id}`;
 
   return (
     <div>
@@ -487,10 +528,12 @@ function SessionsTab() {
           <h3 style={{ marginBottom: '1rem', fontSize: '1rem' }}>Новый сеанс</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 1rem' }}>
             <div>
+              {/* select для выбора фильма — options генерируются из массива movies. */}
               <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.movieId} onChange={(e) => setForm({ ...form, movieId: e.target.value })}>
                 <option value="">Выберите фильм</option>
                 {movies.map((m) => <option key={m.id} value={m.id}>{m.title}</option>)}
               </select>
+              {/* type="datetime-local" — нативный браузерный date-time picker. */}
               <input style={inputStyle} type="datetime-local" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} />
               <input style={inputStyle} placeholder="Цена (руб.)" type="number" value={form.basePrice} onChange={(e) => setForm({ ...form, basePrice: e.target.value })} />
             </div>
@@ -500,6 +543,7 @@ function SessionsTab() {
                 {halls.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
               <input style={inputStyle} type="datetime-local" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} />
+              {/* checkbox для флага active. */}
               <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#aaa', fontSize: '0.9rem', marginTop: '0.3rem' }}>
                 <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
                 Активный сеанс
@@ -520,6 +564,7 @@ function SessionsTab() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
           <thead>
             <tr style={{ background: '#1a1a1a', color: '#aaa', textAlign: 'left' }}>
+              {/* Генерируем ячейки заголовков из массива строк. */}
               {['ID', 'Фильм', 'Зал', 'Начало', 'Цена', 'Статус', 'Действия'].map((h) => (
                 <th key={h} style={{ padding: '0.8rem', borderBottom: '1px solid #2a2a2a' }}>{h}</th>
               ))}
@@ -536,6 +581,7 @@ function SessionsTab() {
                 </td>
                 <td style={{ padding: '0.8rem', color: '#e50914', fontWeight: '600' }}>{s.basePrice} ₽</td>
                 <td style={{ padding: '0.8rem' }}>
+                  {/* ● Активен (зелёный) / ○ Неактивен (серый). */}
                   <span style={{ color: s.active ? '#4caf50' : '#666', fontSize: '0.85rem' }}>
                     {s.active ? '● Активен' : '○ Неактивен'}
                   </span>
@@ -552,9 +598,11 @@ function SessionsTab() {
   );
 }
 
-// -------------------- MENU TAB --------------------
+// ==================== MENU TAB ====================
+// Допустимые категории еды (совпадают с FoodCategory enum на бэкенде).
 const FOOD_CATEGORIES = ['POPCORN', 'DRINK', 'SNACK', 'OTHER'];
 
+// MenuTab — управление меню: CRUD позиций еды.
 function MenuTab() {
   const [items, setItems] = useState<FoodItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -609,6 +657,7 @@ function MenuTab() {
     try { await api.delete(`/food-menu/${id}`); fetchItems(); } catch { alert('Ошибка'); }
   };
 
+  // Уникальные категории из загруженных позиций (может быть подмножество FOOD_CATEGORIES).
   const categories = [...new Set(items.map((i) => i.category).filter(Boolean))];
 
   return (
@@ -621,6 +670,7 @@ function MenuTab() {
       {showForm && (
         <div style={{ background: '#1a1a1a', borderRadius: '10px', padding: '1.5rem', marginBottom: '1.5rem', border: '1px solid #333' }}>
           <h3 style={{ marginBottom: '1rem', fontSize: '1rem' }}>{editItem ? 'Редактировать позицию' : 'Новая позиция'}</h3>
+          {/* Сетка 3 колонки: название / цена / категория. */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 1rem' }}>
             <input style={inputStyle} placeholder="Название" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             <input style={inputStyle} placeholder="Цена (₽)" type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
@@ -638,6 +688,7 @@ function MenuTab() {
 
       {loading && <div style={{ color: '#aaa', padding: '2rem', textAlign: 'center' }}>⏳ Загрузка...</div>}
 
+      {/* Если нет категорий — показываем все товары без группировки. */}
       {categories.length === 0 ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
           {items.map((item) => (
@@ -653,6 +704,7 @@ function MenuTab() {
           ))}
         </div>
       ) : (
+        // Если есть категории — группируем по ним.
         categories.map((cat) => (
           <div key={cat} style={{ marginBottom: '1.5rem' }}>
             <h3 style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px' }}>{cat}</h3>
@@ -675,9 +727,11 @@ function MenuTab() {
   );
 }
 
-// -------------------- SUPPORT TAB --------------------
+// ==================== SUPPORT TAB ====================
+// SupportAdminTab — чат поддержки для администратора.
+// Отличается от SupportPage клиента: видит ВСЕ тикеты, может назначить себя, закрыть тикет.
 function SupportAdminTab() {
-  const { user } = useAuth();
+  const { user } = useAuth(); // нужен user.id для assignAdmin и отображения сообщений
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
@@ -688,14 +742,18 @@ function SupportAdminTab() {
     fetchTickets();
   }, []);
 
+  // Polling сообщений каждые 5 сек при открытом тикете.
   useEffect(() => {
     if (selectedTicket) {
       fetchMessages(selectedTicket.id);
+      // Создаём интервал и возвращаем cleanup функцию (стрелочная функция возвращает clearInterval).
       const interval = setInterval(() => fetchMessages(selectedTicket.id), 5000);
       return () => clearInterval(interval);
     }
   }, [selectedTicket]);
 
+  // fetchTickets — загружает ВСЕ тикеты (не только свои).
+  // GET /api/support/tickets — admin-endpoint.
   const fetchTickets = async () => {
     setLoading(true);
     try {
@@ -721,16 +779,21 @@ function SupportAdminTab() {
     } catch { setNewMessage(content); }
   };
 
+  // closeTicket — закрывает тикет (OPEN → CLOSED).
+  // PATCH /api/support/tickets/{id}/close.
   const closeTicket = async (ticketId: number) => {
     try {
       await api.patch(`/support/tickets/${ticketId}/close`);
       fetchTickets();
+      // Также обновляем selectedTicket локально, чтобы UI немедленно отреагировал.
       if (selectedTicket?.id === ticketId) {
         setSelectedTicket((t) => t ? { ...t, status: 'CLOSED' } : null);
       }
     } catch { alert('Ошибка закрытия'); }
   };
 
+  // assignAdmin — назначает текущего администратора ответственным за тикет.
+  // PATCH /api/support/tickets/{id}/assign { adminId: user.id }.
   const assignAdmin = async (ticketId: number) => {
     if (!user?.id) return;
     try {
@@ -743,11 +806,13 @@ function SupportAdminTab() {
 
   return (
     <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+      {/* Список всех тикетов (левая колонка). */}
       <div style={{ flex: '0 0 320px', minWidth: '260px' }}>
         <h2 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '1rem' }}>
           Все обращения ({tickets.length})
         </h2>
         {loading && <div style={{ color: '#aaa', padding: '1rem', textAlign: 'center' }}>⏳</div>}
+        {/* maxHeight:'600px' + overflowY:'auto' — скролл при большом числе тикетов. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '600px', overflowY: 'auto' }}>
           {tickets.map((ticket) => (
             <div
@@ -771,6 +836,7 @@ function SupportAdminTab() {
                 {ticket.subject}
               </div>
               <div style={{ color: '#666', fontSize: '0.75rem', marginTop: '0.3rem' }}>
+                {/* Показываем клиента и назначенного админа (или "Не назначен"). */}
                 Клиент #{ticket.clientId}
                 {ticket.adminId ? ` | Админ #${ticket.adminId}` : ' | Не назначен'}
               </div>
@@ -779,6 +845,7 @@ function SupportAdminTab() {
         </div>
       </div>
 
+      {/* Чат выбранного тикета (правая колонка). */}
       <div style={{ flex: 1, minWidth: '300px' }}>
         {!selectedTicket ? (
           <div style={{ height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111', borderRadius: '10px', border: '1px solid #2a2a2a', color: '#555', flexDirection: 'column', gap: '1rem' }}>
@@ -787,6 +854,7 @@ function SupportAdminTab() {
           </div>
         ) : (
           <div style={{ background: '#111', borderRadius: '10px', border: '1px solid #2a2a2a', overflow: 'hidden' }}>
+            {/* Шапка чата с кнопками "Взять" и "Закрыть". */}
             <div style={{ padding: '1rem 1.2rem', borderBottom: '1px solid #222' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
                 <div>
@@ -794,11 +862,13 @@ function SupportAdminTab() {
                   <div style={{ fontSize: '0.8rem', color: '#aaa', marginTop: '0.2rem' }}>Клиент #{selectedTicket.clientId}</div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  {/* "Взять" — назначить себя ответственным, если тикет не назначен. */}
                   {!selectedTicket.adminId && (
                     <button onClick={() => assignAdmin(selectedTicket.id)} style={{ ...btnSecondary, fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}>
                       Взять
                     </button>
                   )}
+                  {/* "Закрыть" — только для открытых тикетов. */}
                   {selectedTicket.status === 'OPEN' && (
                     <button onClick={() => closeTicket(selectedTicket.id)} style={{ ...btnDanger, padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}>
                       Закрыть
@@ -808,12 +878,16 @@ function SupportAdminTab() {
               </div>
             </div>
 
+            {/* Область сообщений. */}
             <div style={{ height: '350px', overflowY: 'auto', padding: '1rem' }}>
               {messages.length === 0 && (
                 <div style={{ textAlign: 'center', color: '#666', padding: '2rem' }}>Нет сообщений</div>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                 {messages.map((msg) => {
+                  // isAdmin: true если сообщение от администратора (adminId тикета).
+                  // Сообщения администратора — справа (синяя рамка).
+                  // Сообщения клиента — слева (серая рамка).
                   const isAdmin = msg.senderId === selectedTicket.adminId;
                   return (
                     <div key={msg.id} style={{ display: 'flex', justifyContent: isAdmin ? 'flex-end' : 'flex-start' }}>
@@ -838,6 +912,7 @@ function SupportAdminTab() {
               </div>
             </div>
 
+            {/* Поле ввода ответа — только для открытых тикетов. */}
             {selectedTicket.status === 'OPEN' && (
               <div style={{ padding: '0.8rem 1rem', borderTop: '1px solid #222', display: 'flex', gap: '0.7rem' }}>
                 <input
@@ -860,8 +935,10 @@ function SupportAdminTab() {
   );
 }
 
-// -------------------- MAIN ADMIN PAGE --------------------
+// ==================== MAIN ADMIN PAGE ====================
+// AdminPage — главная страница администратора с вкладками.
 export default function AdminPage() {
+  // activeTab: текущая активная вкладка.
   const [activeTab, setActiveTab] = useState<Tab>('movies');
 
   return (
@@ -869,7 +946,7 @@ export default function AdminPage() {
       <h1 style={{ fontSize: '1.8rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Панель администратора</h1>
       <p style={{ color: '#aaa', marginBottom: '2rem' }}>Управление контентом и пользователями</p>
 
-      {/* Tabs */}
+      {/* Панель вкладок. */}
       <div style={{ display: 'flex', gap: '0', marginBottom: '2rem', borderBottom: '2px solid #2a2a2a', overflowX: 'auto' }}>
         {TABS.map((tab) => (
           <button
@@ -878,14 +955,16 @@ export default function AdminPage() {
             style={{
               background: 'transparent',
               border: 'none',
+              // Активная вкладка: красный текст + красная нижняя рамка.
               color: activeTab === tab.key ? '#e50914' : '#666',
+              // marginBottom:'-2px' + borderBottom: активная вкладка "перекрывает" нижнюю линию контейнера.
               borderBottom: activeTab === tab.key ? '2px solid #e50914' : '2px solid transparent',
               marginBottom: '-2px',
               padding: '0.7rem 1.5rem',
               fontSize: '0.95rem',
               fontWeight: activeTab === tab.key ? '700' : '400',
               cursor: 'pointer',
-              whiteSpace: 'nowrap',
+              whiteSpace: 'nowrap', // запрет переноса текста кнопки
               transition: 'color 0.2s',
             }}
           >
@@ -894,12 +973,13 @@ export default function AdminPage() {
         ))}
       </div>
 
+      {/* Рендеринг активного таба через условные выражения. */}
       <div>
-        {activeTab === 'movies' && <MoviesTab />}
-        {activeTab === 'halls' && <HallsTab />}
+        {activeTab === 'movies'   && <MoviesTab />}
+        {activeTab === 'halls'    && <HallsTab />}
         {activeTab === 'sessions' && <SessionsTab />}
-        {activeTab === 'menu' && <MenuTab />}
-        {activeTab === 'support' && <SupportAdminTab />}
+        {activeTab === 'menu'     && <MenuTab />}
+        {activeTab === 'support'  && <SupportAdminTab />}
       </div>
     </div>
   );

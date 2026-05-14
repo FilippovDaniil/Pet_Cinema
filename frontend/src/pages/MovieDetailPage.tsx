@@ -1,23 +1,35 @@
 import { useState, useEffect } from 'react';
+// useParams — хук для получения параметров URL.
+// В маршруте /movies/:id → useParams() возвращает { id: "42" }.
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import { Movie, Review, Comment } from '../types';
 import { useAuth } from '../context/AuthContext';
 
+// StarRating — переиспользуемый компонент звёздного рейтинга.
+// Два режима: только просмотр (onChange не передан) и интерактивный (onChange = функция).
+// rating — текущее значение (0-5).
+// onChange — опциональный callback при клике на звезду.
 function StarRating({ rating, onChange }: { rating: number; onChange?: (r: number) => void }) {
+  // hovered — звезда под курсором мыши (для превью при наведении).
   const [hovered, setHovered] = useState(0);
   return (
     <span>
       {[1, 2, 3, 4, 5].map((s) => (
         <span
           key={s}
+          // onChange && onChange(s) — вызываем callback только если он передан (режим редактирования).
           onClick={() => onChange && onChange(s)}
+          // setHovered только если onChange передан (в режиме просмотра hover не нужен).
           onMouseEnter={() => onChange && setHovered(s)}
           onMouseLeave={() => onChange && setHovered(0)}
           style={{
+            // hovered || Math.round(rating) — приоритет: сначала hovered (превью), потом rating.
+            // Если hovered=3 → показываем 3 заполненных звезды независимо от rating.
             color: s <= (hovered || Math.round(rating)) ? '#f5a623' : '#555',
+            // В режиме редактирования звёзды крупнее (1.5rem vs 1rem).
             fontSize: onChange ? '1.5rem' : '1rem',
-            cursor: onChange ? 'pointer' : 'default',
+            cursor: onChange ? 'pointer' : 'default', // pointer = кликабельные
           }}
         >
           ★
@@ -27,30 +39,42 @@ function StarRating({ rating, onChange }: { rating: number; onChange?: (r: numbe
   );
 }
 
+// MovieDetailPage — страница с деталями фильма: постер, описание, отзывы, комментарии.
 export default function MovieDetailPage() {
+  // useParams<{ id: string }>() — TypeScript generic указывает форму параметров.
+  // id — строка из URL (path параметр :id), нужно parseInt для API запросов.
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  // isClient — true если ROLE_CLIENT (только клиенты могут оставлять отзывы/комментарии).
+  // user — данные текущего пользователя (для отображения UserId).
   const { isClient, user } = useAuth();
 
+  // Стейт основных данных страницы.
   const [movie, setMovie] = useState<Movie | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [reviewRating, setReviewRating] = useState(5);
+  // Стейт формы нового отзыва.
+  const [reviewRating, setReviewRating] = useState(5);     // дефолтный рейтинг = 5
   const [reviewComment, setReviewComment] = useState('');
   const [commentText, setCommentText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [reviewError, setReviewError] = useState('');
 
+  // useEffect — загружаем данные при монтировании или изменении id.
+  // [id] — зависимость: если id изменится (навигация между фильмами) — перезагружаем.
   useEffect(() => {
-    if (!id) return;
+    if (!id) return; // защита: id может быть undefined при неправильном маршруте
     const fetchAll = async () => {
       setLoading(true);
       try {
+        // Promise.all — параллельные запросы (фильм + отзывы + комментарии одновременно).
+        // Быстрее чем последовательные запросы (суммарное время = max из трёх, не сумма).
         const [movieRes, reviewsRes, commentsRes] = await Promise.all([
           api.get<Movie>(`/movies/${id}`),
+          // .catch(() => ({ data: [] })) — если отзывов нет, не падаем (возвращаем пустой массив).
           api.get<Review[]>(`/movies/${id}/reviews`).catch(() => ({ data: [] })),
           api.get<Comment[]>(`/movies/${id}/comments`).catch(() => ({ data: [] })),
         ]);
@@ -66,14 +90,18 @@ export default function MovieDetailPage() {
     fetchAll();
   }, [id]);
 
+  // submitReview — отправляет новый отзыв.
   const submitReview = async () => {
     if (!id) return;
     setSubmitting(true);
     setReviewError('');
     try {
+      // POST /api/movies/{id}/reviews — только ROLE_CLIENT (защищено в movie-service SecurityConfig).
       await api.post(`/movies/${id}/reviews`, { rating: reviewRating, comment: reviewComment });
+      // Перезагружаем список отзывов после добавления.
       const res = await api.get<Review[]>(`/movies/${id}/reviews`);
       setReviews(res.data);
+      // Сброс формы.
       setReviewComment('');
       setReviewRating(5);
     } catch (e: any) {
@@ -83,20 +111,24 @@ export default function MovieDetailPage() {
     }
   };
 
+  // submitComment — отправляет новый комментарий.
   const submitComment = async () => {
     if (!id || !commentText.trim()) return;
     setSubmitting(true);
     try {
+      // POST /api/movies/{id}/comments — только ROLE_CLIENT.
       await api.post(`/movies/${id}/comments`, { text: commentText });
       const res = await api.get<Comment[]>(`/movies/${id}/comments`);
       setComments(res.data);
       setCommentText('');
     } catch {
+      // Молчаливо игнорируем ошибку комментария
     } finally {
       setSubmitting(false);
     }
   };
 
+  // CSS градиенты для постеров (аналогично HomePage).
   const POSTER_GRADIENTS: Record<string, string> = {
     TWO_D:   'linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%)',
     THREE_D: 'linear-gradient(160deg, #0a2e1a 0%, #0d5c32 50%, #11998e 100%)',
@@ -109,6 +141,7 @@ export default function MovieDetailPage() {
     FIVE_D: '#7b1fa2',
   };
 
+  // Загрузка — показываем индикатор.
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '4rem', color: '#aaa' }}>
@@ -118,6 +151,7 @@ export default function MovieDetailPage() {
     );
   }
 
+  // Ошибка или фильм не найден.
   if (error || !movie) {
     return (
       <div style={{ background: '#2a0a0a', border: '1px solid #e50914', borderRadius: '8px', padding: '1.5rem', color: '#ff6b6b' }}>
@@ -126,11 +160,12 @@ export default function MovieDetailPage() {
     );
   }
 
+  // ?? — nullish coalescing: если нет градиента для данного типа → дефолтный синий.
   const posterGradient = POSTER_GRADIENTS[movie.type] ?? 'linear-gradient(160deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
 
   return (
     <div>
-      {/* Back button */}
+      {/* Кнопка "Назад" — navigate(-1) = назад в истории браузера */}
       <button
         onClick={() => navigate(-1)}
         style={{ background: 'transparent', border: 'none', color: '#aaa', fontSize: '0.9rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
@@ -138,10 +173,12 @@ export default function MovieDetailPage() {
         ← Назад
       </button>
 
-      {/* Movie Info */}
+      {/* Блок с постером и информацией о фильме */}
+      {/* flexWrap: 'wrap' — на мобильных устройствах элементы переносятся на новую строку */}
       <div style={{ display: 'flex', gap: '2rem', marginBottom: '3rem', flexWrap: 'wrap' }}>
+        {/* Постер: фиксированная ширина 280px, соотношение 2:3 */}
         <div style={{ flexShrink: 0, width: '280px', aspectRatio: '2/3', borderRadius: '12px', overflow: 'hidden', position: 'relative', background: posterGradient }}>
-          {/* Fallback content */}
+          {/* Fallback контент (виден если нет posterUrl или изображение не загрузилось) */}
           <div style={{
             position: 'absolute', inset: 0,
             display: 'flex', flexDirection: 'column',
@@ -153,7 +190,7 @@ export default function MovieDetailPage() {
               {movie.title}
             </span>
           </div>
-          {/* Real poster on top */}
+          {/* Реальный постер поверх fallback */}
           {movie.posterUrl && (
             <img
               src={movie.posterUrl}
@@ -163,6 +200,9 @@ export default function MovieDetailPage() {
             />
           )}
         </div>
+
+        {/* Информация о фильме */}
+        {/* flex: 1 — занимает оставшееся пространство; minWidth: 280px — не сужается слишком */}
         <div style={{ flex: 1, minWidth: '280px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.8rem', flexWrap: 'wrap' }}>
             <h1 style={{ fontSize: '2rem', fontWeight: 'bold' }}>{movie.title}</h1>
@@ -178,6 +218,7 @@ export default function MovieDetailPage() {
             </span>
           </div>
 
+          {/* Звёздный рейтинг + числовое значение */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1rem' }}>
             <StarRating rating={movie.averageRating} />
             <span style={{ color: '#aaa', fontSize: '0.9rem' }}>
@@ -189,6 +230,7 @@ export default function MovieDetailPage() {
             <span style={{ marginRight: '1.5rem' }}>⏱ {movie.durationMinutes} мин</span>
           </div>
 
+          {/* Теги жанров */}
           {movie.genres && movie.genres.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.2rem' }}>
               {movie.genres.map((g, i) => (
@@ -203,6 +245,7 @@ export default function MovieDetailPage() {
             {movie.description}
           </p>
 
+          {/* Кнопка перехода к выбору сеансов */}
           <button
             onClick={() => navigate(`/sessions/${movie.id}`)}
             style={{
@@ -221,17 +264,19 @@ export default function MovieDetailPage() {
         </div>
       </div>
 
-      {/* Reviews Section */}
+      {/* Секция отзывов */}
       <section style={{ marginBottom: '3rem' }}>
         <h2 style={{ fontSize: '1.4rem', fontWeight: '700', marginBottom: '1.5rem', borderBottom: '2px solid #e50914', paddingBottom: '0.5rem' }}>
           Отзывы ({reviews.length})
         </h2>
 
+        {/* Форма добавления отзыва — только для ROLE_CLIENT */}
         {isClient && (
           <div style={{ background: '#1a1a1a', borderRadius: '10px', padding: '1.5rem', marginBottom: '1.5rem', border: '1px solid #2a2a2a' }}>
             <h3 style={{ fontSize: '1rem', marginBottom: '1rem' }}>Написать отзыв</h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
               <span style={{ color: '#aaa', fontSize: '0.9rem' }}>Оценка:</span>
+              {/* StarRating с onChange — интерактивный режим (кликабельные звёзды) */}
               <StarRating rating={reviewRating} onChange={setReviewRating} />
               <span style={{ color: '#f5a623' }}>{reviewRating}/5</span>
             </div>
@@ -239,7 +284,7 @@ export default function MovieDetailPage() {
               value={reviewComment}
               onChange={(e) => setReviewComment(e.target.value)}
               placeholder="Ваш отзыв..."
-              rows={3}
+              rows={3}  // rows — количество видимых строк textarea
               style={{
                 width: '100%',
                 background: '#111',
@@ -248,7 +293,7 @@ export default function MovieDetailPage() {
                 color: '#fff',
                 padding: '0.7rem',
                 fontSize: '0.9rem',
-                resize: 'vertical',
+                resize: 'vertical', // пользователь может менять высоту, но не ширину
                 marginBottom: '0.8rem',
               }}
             />
@@ -271,6 +316,7 @@ export default function MovieDetailPage() {
           </div>
         )}
 
+        {/* Список отзывов */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {reviews.length === 0 && (
             <p style={{ color: '#666', fontStyle: 'italic' }}>Отзывов пока нет. Будьте первым!</p>
@@ -283,6 +329,7 @@ export default function MovieDetailPage() {
                 </span>
                 <span style={{ color: '#aaa', fontSize: '0.85rem' }}>Пользователь #{review.userId}</span>
                 <span style={{ marginLeft: 'auto', color: '#666', fontSize: '0.8rem' }}>
+                  {/* toLocaleDateString('ru-RU') — форматирует дату по русской локали: "14.05.2026" */}
                   {new Date(review.createdAt).toLocaleDateString('ru-RU')}
                 </span>
               </div>
@@ -295,12 +342,13 @@ export default function MovieDetailPage() {
         </div>
       </section>
 
-      {/* Comments Section */}
+      {/* Секция комментариев */}
       <section>
         <h2 style={{ fontSize: '1.4rem', fontWeight: '700', marginBottom: '1.5rem', borderBottom: '2px solid #333', paddingBottom: '0.5rem' }}>
           Комментарии ({comments.length})
         </h2>
 
+        {/* Поле добавления комментария — только для ROLE_CLIENT */}
         {isClient && (
           <div style={{ display: 'flex', gap: '0.8rem', marginBottom: '1.5rem' }}>
             <input
@@ -308,9 +356,10 @@ export default function MovieDetailPage() {
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
               placeholder="Написать комментарий..."
+              // onKeyDown — отправка по Enter (не нужно кликать кнопку)
               onKeyDown={(e) => e.key === 'Enter' && submitComment()}
               style={{
-                flex: 1,
+                flex: 1,  // занимает всё доступное место
                 background: '#1a1a1a',
                 border: '1px solid #333',
                 borderRadius: '6px',
@@ -321,6 +370,7 @@ export default function MovieDetailPage() {
             />
             <button
               onClick={submitComment}
+              // disabled если submitting ИЛИ поле пустое
               disabled={submitting || !commentText.trim()}
               style={{
                 background: '#e50914',
@@ -337,6 +387,7 @@ export default function MovieDetailPage() {
           </div>
         )}
 
+        {/* Список комментариев */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
           {comments.length === 0 && (
             <p style={{ color: '#666', fontStyle: 'italic' }}>Комментариев пока нет.</p>

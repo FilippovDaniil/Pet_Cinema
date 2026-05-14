@@ -142,7 +142,7 @@ class OrderControllerTest {
         when(orderService.createTicketOrderBySeller(any(SellerTicketOrderRequest.class), eq(77L))).thenReturn(dto);
 
         mockMvc.perform(post("/api/orders/ticket/by-seller")
-                        .with(authentication(auth("77", "SELLER"))) // роль SELLER
+                        .with(authentication(auth("77", "ROLE_SELLER"))) // ROLE_ prefix required by hasAuthority()
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
@@ -177,7 +177,7 @@ class OrderControllerTest {
 
         // ADMIN тоже может использовать seller endpoint (hasAuthority('ROLE_ADMIN') в @PreAuthorize)
         mockMvc.perform(post("/api/orders/ticket/by-seller")
-                        .with(authentication(auth("1", "ADMIN")))
+                        .with(authentication(auth("1", "ROLE_ADMIN")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
@@ -200,7 +200,7 @@ class OrderControllerTest {
         when(orderService.createFoodOrder(any(FoodOrderRequest.class), eq(88L))).thenReturn(dto);
 
         mockMvc.perform(post("/api/orders/food")
-                        .with(authentication(auth("88", "SELLER")))
+                        .with(authentication(auth("88", "ROLE_SELLER")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
