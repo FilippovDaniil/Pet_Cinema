@@ -37,34 +37,47 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
+// @SpringBootTest — поднимает ПОЛНЫЙ Spring Context (BД, сервисы, репозитории).
+// WebEnvironment.RANDOM_PORT — запускает на случайном порту (нет конфликтов при параллельных тестах).
+//
+// spring.autoconfigure.exclude=KafkaAutoConfiguration: исключаем автоконфигурацию Kafka.
+// Почему? Kafka требует реального брокера при старте. Мы мокируем KafkaTemplate через @MockBean,
+// но Spring Boot пытается создать Kafka-инфраструктуру при старте. Исключение это предотвращает.
+// (Альтернатива: EmbeddedKafkaBroker, но это тяжелее для интеграционных тестов сервисного слоя.)
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration"
         }
 )
-@ActiveProfiles("test")
-@Testcontainers
+@ActiveProfiles("test") // Загружает application-test.yml (отключает Redis healthcheck)
+@Testcontainers         // Активирует управление жизненным циклом @Container полей
 @DisplayName("MovieService Integration Tests")
 class MovieServiceIntegrationTest {
 
+    // @Container static: один контейнер PostgreSQL на все тесты класса (переиспользуется — быстрее).
+    // Нестатический @Container: новый контейнер для каждого теста (изоляция, но медленнее).
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine")
             .withDatabaseName("movie_db_test")
             .withUsername("cinema")
             .withPassword("cinema");
 
+    // @DynamicPropertySource: подменяет spring.datasource.* из application.yml
+    // на параметры запущенного Testcontainers-контейнера (динамический порт!).
+    // Вызывается Spring ДО создания ApplicationContext — поэтому static метод.
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);     // jdbc:postgresql://localhost:PORT/movie_db_test
+        registry.add("spring.datasource.username", postgres::getUsername); // "cinema"
+        registry.add("spring.datasource.password", postgres::getPassword); // "cinema"
         registry.add("spring.datasource.driver-class-name", () -> "org.postgresql.Driver");
     }
 
     @Autowired
-    private MovieService movieService;
+    private MovieService movieService; // Реальный сервис — тестируем его полностью
 
+    // Репозитории используются в @BeforeEach для очистки данных между тестами
     @Autowired
     private GenreRepository genreRepository;
 
@@ -74,33 +87,39 @@ class MovieServiceIntegrationTest {
     @Autowired
     private ReviewRepository reviewRepository;
 
-    // Mock Redis to avoid needing a real Redis instance
+    // @MockBean: заменяет реальный StringRedisTemplate Spring-моком.
+    // Без мока: Spring пытается подключиться к Redis (которого нет в тесте) → ConnectionException.
+    // Мок просто возвращает null/ничего для всех операций.
     @MockBean
     private StringRedisTemplate redisTemplate;
 
     @MockBean
-    private ValueOperations<String, String> valueOperations;
+    private ValueOperations<String, String> valueOperations; // Мок для redisTemplate.opsForValue()
 
-    // Mock Kafka producer since KafkaAutoConfiguration is excluded
+    // KafkaTemplate мокируется по двум причинам:
+    // 1. Kafka автоконфигурация исключена (нет реального брокера)
+    // 2. Нам не нужно проверять отправку событий в интеграционных тестах сервисного слоя
     @MockBean
     private KafkaTemplate<String, Object> kafkaTemplate;
 
-    private Genre savedGenre;
+    private Genre savedGenre; // Жанр, созданный в setUp() для использования в тестах
 
     @BeforeEach
     void setUp() {
-        // Clean up data before each test (respect FK order)
+        // Очищаем БД перед каждым тестом для изоляции (один тест не влияет на другой).
+        // Порядок важен: сначала child-таблицы (FK constraints), потом parent.
+        // reviews → movies → genres (reviews.movie_id ссылается на movies.id)
         reviewRepository.deleteAll();
         movieRepository.deleteAll();
         genreRepository.deleteAll();
 
-        // Pre-create a Genre for use in tests
+        // Создаём жанр заранее — многие тесты нуждаются в существующем жанре
         savedGenre = genreRepository.save(Genre.builder().name("Action").build());
 
-        // Mock Redis operations: always return null (cache miss) for opsForValue().get()
-        // and do nothing for set() and delete()
+        // Настраиваем Redis мок: opsForValue() → valueOperations, get(any) → null (cache miss).
+        // Это гарантирует что MovieService всегда идёт в БД (не в кеш) — тестируем реальное поведение.
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(anyString())).thenReturn(null);
+        when(valueOperations.get(anyString())).thenReturn(null); // Всегда cache miss
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -110,33 +129,37 @@ class MovieServiceIntegrationTest {
     @Test
     @DisplayName("createAndGetMovie_fullFlow: create genre → create movie → getMovieById verifies all fields")
     void createAndGetMovie_fullFlow() {
+        // Интеграционный тест: проходим полный путь через реальный Spring Context и реальную БД.
+        // Создаём фильм → сохраняется в PostgreSQL (в контейнере) → читаем обратно.
         MovieCreateRequest req = MovieCreateRequest.builder()
                 .title("Inception")
                 .description("Dream within a dream")
                 .posterUrl("http://poster.com/inception.jpg")
                 .durationMinutes(148)
                 .type("TWO_D")
-                .genreIds(List.of(savedGenre.getId()))
+                .genreIds(List.of(savedGenre.getId())) // savedGenre создан в @BeforeEach
                 .build();
 
-        MovieDto created = movieService.createMovie(req, 1L);
+        MovieDto created = movieService.createMovie(req, 1L); // Реальный INSERT в PostgreSQL
 
+        // Проверяем что все поля корректно сохранились и вернулись
         assertThat(created).isNotNull();
-        assertThat(created.getId()).isNotNull();
+        assertThat(created.getId()).isNotNull(); // id присвоен PostgreSQL (не был null)
         assertThat(created.getTitle()).isEqualTo("Inception");
         assertThat(created.getDescription()).isEqualTo("Dream within a dream");
         assertThat(created.getPosterUrl()).isEqualTo("http://poster.com/inception.jpg");
         assertThat(created.getDurationMinutes()).isEqualTo(148);
         assertThat(created.getType()).isEqualTo("TWO_D");
-        assertThat(created.getGenres()).containsExactly("Action");
+        assertThat(created.getGenres()).containsExactly("Action"); // ManyToMany работает корректно
 
+        // Читаем тот же фильм через getMovieById — убеждаемся что данные персистентны
         MovieDto fetched = movieService.getMovieById(created.getId());
 
         assertThat(fetched).isNotNull();
         assertThat(fetched.getId()).isEqualTo(created.getId());
         assertThat(fetched.getTitle()).isEqualTo("Inception");
         assertThat(fetched.getGenres()).containsExactly("Action");
-        assertThat(fetched.getAverageRating()).isNull(); // no reviews yet
+        assertThat(fetched.getAverageRating()).isNull(); // Отзывов нет → null (не 0.0)
     }
 
     // ────────────────────────────────────────────────────────────────────────────

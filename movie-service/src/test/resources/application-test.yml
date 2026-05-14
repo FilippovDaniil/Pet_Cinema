@@ -1,23 +1,39 @@
 spring:
   datasource:
+    # jdbc:tc: — специальный JDBC URL Testcontainers (TC).
+    # При использовании этого URL Testcontainers автоматически запускает контейнер PostgreSQL.
+    # Альтернатива: явный @Container + @DynamicPropertySource (как в MovieServiceIntegrationTest).
+    # Оба подхода корректны; этот более лаконичен для простых случаев.
     url: jdbc:tc:postgresql:15:///movie_db_test
-    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver # TC-специфичный драйвер
+
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: create-drop  # create-drop: таблицы создаются при старте и УДАЛЯЮТСЯ при завершении.
+                              # Безопасно для тестов — каждый запуск начинается с чистой схемой.
+                              # В продакшене: update (не удалять данные!)
+
   kafka:
+    # spring.embedded.kafka.brokers: адрес EmbeddedKafka (если используется в тесте).
+    # Если EmbeddedKafka не настроен — fallback на localhost:9092 (не используется т.к. Kafka мокируется).
     bootstrap-servers: ${spring.embedded.kafka.brokers:localhost:9092}
+
   data:
     redis:
-      host: localhost
+      host: localhost  # Redis не запускается в тестах — StringRedisTemplate мокируется через @MockBean
       port: 6379
+
 eureka:
   client:
-    enabled: false
+    enabled: false  # Отключаем Eureka: нет реального реестра в тестах, регистрация не нужна
+
 jwt:
+  # Тестовый секрет: отличается от продакшен-секрета (хорошая практика).
+  # Длина ≥ 32 байт = 256 бит (минимум для HMAC-SHA256).
   secret: testSecretKeyForTestingPurposesOnly1234567890123456
+
 redis:
-  movies-cache-key: movies:list:all
+  movies-cache-key: movies:list:all  # Совпадает с application.yml — тесты используют те же ключи
   movies-cache-ttl: 600
   sessions-cache-prefix: "sessions:movie:"
   sessions-cache-ttl: 300

@@ -22,14 +22,17 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+// @ExtendWith(MockitoExtension.class) — подключает Mockito к JUnit 5.
+// Позволяет использовать @Mock, @InjectMocks без явного вызова MockitoAnnotations.openMocks(this).
+// Нет Spring контекста — тест быстрый (миллисекунды, не секунды).
 @ExtendWith(MockitoExtension.class)
-@DisplayName("GenreService Unit Tests")
+@DisplayName("GenreService Unit Tests") // Название группы тестов в отчёте
 class GenreServiceTest {
 
-    @Mock
+    @Mock // Mockito создаёт mock-объект GenreRepository: все методы возвращают null/пустые значения по умолчанию
     private GenreRepository genreRepository;
 
-    @InjectMocks
+    @InjectMocks // Mockito создаёт реальный GenreService и инжектирует mock genreRepository в конструктор
     private GenreService genreService;
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -39,16 +42,22 @@ class GenreServiceTest {
     @Test
     @DisplayName("getAllGenres: returns all genres mapped to GenreDtos")
     void getAllGenres_returnsMappedDtos() {
+        // Arrange: подготавливаем тестовые данные
         Genre action = Genre.builder().id(1L).name("Action").build();
         Genre drama = Genre.builder().id(2L).name("Drama").build();
         Genre comedy = Genre.builder().id(3L).name("Comedy").build();
 
+        // when(...).thenReturn(...): определяем поведение мока.
+        // Когда genreRepository.findAll() будет вызван — вернуть этот список.
         when(genreRepository.findAll()).thenReturn(List.of(action, drama, comedy));
 
+        // Act: вызываем тестируемый метод
         List<GenreDto> result = genreService.getAllGenres();
 
-        assertThat(result).hasSize(3);
+        // Assert: проверяем результат
+        assertThat(result).hasSize(3); // Ровно 3 жанра
 
+        // Проверяем маппинг: id и name правильно перенесены из Genre в GenreDto
         assertThat(result.get(0).getId()).isEqualTo(1L);
         assertThat(result.get(0).getName()).isEqualTo("Action");
 
@@ -58,18 +67,19 @@ class GenreServiceTest {
         assertThat(result.get(2).getId()).isEqualTo(3L);
         assertThat(result.get(2).getName()).isEqualTo("Comedy");
 
+        // verify(): проверяем, что метод был вызван ровно 1 раз (по умолчанию times(1))
         verify(genreRepository).findAll();
     }
 
     @Test
     @DisplayName("getAllGenres: empty repository → returns empty list")
     void getAllGenres_emptyRepository_returnsEmptyList() {
-        when(genreRepository.findAll()).thenReturn(List.of());
+        when(genreRepository.findAll()).thenReturn(List.of()); // Пустой репозиторий
 
         List<GenreDto> result = genreService.getAllGenres();
 
-        assertThat(result).isEmpty();
-        verify(genreRepository).findAll();
+        assertThat(result).isEmpty(); // Должен вернуть пустой список, а не null
+        verify(genreRepository).findAll(); // Репозиторий всё равно вызывался
     }
 
     // ────────────────────────────────────────────────────────────────────────────
@@ -79,22 +89,24 @@ class GenreServiceTest {
     @Test
     @DisplayName("createGenre: new name → saves genre and returns GenreDto with assigned id")
     void createGenre_newName_saved() {
-        GenreDto request = GenreDto.builder().name("Horror").build();
+        GenreDto request = GenreDto.builder().name("Horror").build(); // Запрос на создание
 
-        Genre savedGenre = Genre.builder().id(4L).name("Horror").build();
+        Genre savedGenre = Genre.builder().id(4L).name("Horror").build(); // Что "вернёт БД" после save()
 
-        when(genreRepository.findByName("Horror")).thenReturn(Optional.empty());
-        when(genreRepository.save(any(Genre.class))).thenReturn(savedGenre);
+        when(genreRepository.findByName("Horror")).thenReturn(Optional.empty()); // Жанра нет → не дубликат
+        when(genreRepository.save(any(Genre.class))).thenReturn(savedGenre);     // save() возвращает объект с id
 
         GenreDto result = genreService.createGenre(request);
 
         assertThat(result).isNotNull();
-        assertThat(result.getId()).isEqualTo(4L);
+        assertThat(result.getId()).isEqualTo(4L);    // id присвоен "БД"
         assertThat(result.getName()).isEqualTo("Horror");
 
+        // ArgumentCaptor — перехватывает аргумент, переданный в save().
+        // Позволяет проверить ЧТО именно было передано в метод (не только что он был вызван).
         ArgumentCaptor<Genre> genreCaptor = ArgumentCaptor.forClass(Genre.class);
-        verify(genreRepository).save(genreCaptor.capture());
-        assertThat(genreCaptor.getValue().getName()).isEqualTo("Horror");
+        verify(genreRepository).save(genreCaptor.capture()); // Перехватываем аргумент
+        assertThat(genreCaptor.getValue().getName()).isEqualTo("Horror"); // Проверяем содержимое
     }
 
     @Test
@@ -103,12 +115,15 @@ class GenreServiceTest {
         GenreDto request = GenreDto.builder().name("Action").build();
 
         Genre existingGenre = Genre.builder().id(1L).name("Action").build();
+        // Жанр "Action" уже существует → findByName возвращает его
         when(genreRepository.findByName("Action")).thenReturn(Optional.of(existingGenre));
 
+        // assertThatThrownBy: проверяем что лямбда бросает нужное исключение
         assertThatThrownBy(() -> genreService.createGenre(request))
                 .isInstanceOf(AlreadyExistsException.class)
-                .hasMessageContaining("Action");
+                .hasMessageContaining("Action"); // Сообщение содержит имя дублирующегося жанра
 
+        // never(): подтверждаем что save() НЕ был вызван — дубликат не сохранён
         verify(genreRepository, never()).save(any());
     }
 
@@ -123,6 +138,7 @@ class GenreServiceTest {
 
         GenreDto result = genreService.createGenre(request);
 
+        // Дополнительный тест: убеждаемся что name из request правильно попал в ответ
         assertThat(result.getName()).isEqualTo("Thriller");
         assertThat(result.getId()).isEqualTo(5L);
     }

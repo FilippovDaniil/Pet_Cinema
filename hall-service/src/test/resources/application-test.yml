@@ -1,24 +1,48 @@
 spring:
   datasource:
+    # jdbc:tc: — специальный JDBC URL Testcontainers (TC).
+    # При использовании этого URL Testcontainers автоматически запускает контейнер PostgreSQL.
+    # Используется в тестах, которые НЕ задают @DynamicPropertySource (более простой подход).
+    # HallServiceIntegrationTest использует @DynamicPropertySource и переопределяет этот URL.
     url: jdbc:tc:postgresql:15:///hall_db_test
+    # TC-специфичный JDBC драйвер — управляет жизненным циклом PostgreSQL контейнера.
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+
   jpa:
     hibernate:
+      # create-drop: таблицы создаются при старте Spring Context и удаляются при завершении.
+      # Безопасно для тестов — каждый запуск начинается с чистой схемой.
+      # В продакшне НЕЛЬЗЯ использовать (удалит все данные).
       ddl-auto: create-drop
     properties:
       hibernate:
+        # Явный диалект PostgreSQL — требуется для корректной работы Hibernate с PostgreSQL в тестах.
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
   data:
     redis:
+      # Redis не запускается в тестах.
+      # RedisConnectionFactory и ReactiveRedisConnectionFactory мокируются через @MockBean
+      # в HallServiceIntegrationTest — Spring не пытается подключиться к Redis.
       host: localhost
       port: 6379
+
 eureka:
   client:
-    enabled: false
+    enabled: false  # Не регистрируемся в Eureka при тестах
+
+# Дублируем настройку для spring.cloud (legacy способ задать discovery enabled)
 spring.cloud.discovery.enabled: false
+
 jwt:
+  # Тестовый JWT-секрет — отличается от продакшена (хорошая практика безопасности).
+  # Длина >= 32 байт = 256 бит (минимум для HMAC-SHA256).
   secret: testSecretKeyForTestingPurposesOnly1234567890123456
+
 management:
   health:
     redis:
+      # Отключаем Redis healthcheck в тестах.
+      # Без этого Spring Boot Actuator пытается проверить Redis-соединение при старте
+      # и падает с ошибкой (Redis не запущен в тестах, а RedisConnectionFactory замокирован).
       enabled: false

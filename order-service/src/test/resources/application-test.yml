@@ -1,19 +1,37 @@
 spring:
   datasource:
+    # jdbc:tc: — специальный JDBC URL Testcontainers (TC).
+    # При использовании этого URL Testcontainers автоматически запускает PostgreSQL контейнер.
+    # Используется как fallback — OrderServiceIntegrationTest переопределяет через @DynamicPropertySource.
     url: jdbc:tc:postgresql:15:///order_db_test
+    # TC-специфичный JDBC драйвер — управляет жизненным циклом PostgreSQL контейнера через URL.
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+
   jpa:
     hibernate:
+      # create-drop: таблицы создаются при старте Spring Context и удаляются при завершении.
+      # Безопасно для тестов — каждый запуск начинается с чистой схемой.
       ddl-auto: create-drop
     properties:
       hibernate:
+        # Явный диалект PostgreSQL — нужен для корректной генерации SQL.
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
   kafka:
+    # KafkaTemplate замокирован в тестах (@MockBean) — этот адрес не используется реально.
+    # Указан чтобы Spring Boot AutoConfiguration не падал при отсутствии брокера.
     bootstrap-servers: localhost:9092
+
 eureka:
   client:
+    # Отключаем Eureka в тестах — не нужно подключаться к реальному registry.
     enabled: false
+
 jwt:
+  # Тестовый секрет — отличается от продакшена. Минимум 32 байта (256 бит) для HMAC-SHA256.
   secret: testSecretKeyForTestingPurposesOnly1234567890123456
+
 payment:
+  # URL вебхука для тестов — localhost вместо Docker DNS "order-service".
+  # InternalPaymentService замокирован в интеграционных тестах, этот URL не используется.
   webhook-url: http://localhost:8084/api/orders/webhook/payment

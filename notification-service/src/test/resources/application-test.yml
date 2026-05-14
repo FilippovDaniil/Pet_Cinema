@@ -1,21 +1,37 @@
 spring:
   datasource:
+    # jdbc:tc:postgresql:15:///notification_db_test — Testcontainers JDBC URL.
+    # TC-драйвер автоматически запускает Docker контейнер postgres:15 при первом подключении.
+    # @DynamicPropertySource в NotificationServiceIntegrationTest переопределяет этот URL
+    # на реальный URL запущенного контейнера с динамическим портом.
     url: jdbc:tc:postgresql:15:///notification_db_test
+    # ContainerDatabaseDriver — прокси-драйвер Testcontainers.
+    # Перехватывает getConnection() и запускает Docker контейнер.
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+
   jpa:
     hibernate:
+      # create-drop — создаёт схему при старте, удаляет при остановке.
+      # Чистая БД для каждого запуска тестов (нет накопленных данных от предыдущих запусков).
       ddl-auto: create-drop
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: localhost:9092  # не используется (KafkaAutoConfiguration исключена в IntegrationTest)
     consumer:
+      # Настройки consumer для случаев когда Kafka не исключается полностью.
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
 eureka:
   client:
+    # Eureka отключена: в тестах нет Eureka Server.
     enabled: false
+
 jwt:
+  # Тестовый JWT секрет. Длина >= 32 символа (256 бит) для HMAC-SHA256.
+  # Не совпадает с продакшн секретом — нормально для изолированных тестов.
   secret: testSecretKeyForTestingPurposesOnly1234567890123456

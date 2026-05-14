@@ -24,6 +24,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+// Чистые unit-тесты сервиса ExtraServiceService без Spring Context.
+// Все зависимости замокированы — тесты быстрые и изолированные.
 @ExtendWith(MockitoExtension.class)
 class ExtraServiceServiceTest {
 
@@ -36,6 +38,8 @@ class ExtraServiceServiceTest {
     @InjectMocks
     private ExtraServiceService extraServiceService;
 
+    // Вспомогательный метод для создания тестового объекта Hall.
+    // Используется в нескольких тестах — выделен чтобы избежать дублирования.
     private Hall buildHall(Long id) {
         return Hall.builder()
                 .id(id)
@@ -54,6 +58,7 @@ class ExtraServiceServiceTest {
         ExtraService es1 = ExtraService.builder().id(10L).hall(hall).name("Popcorn").price(new BigDecimal("5.00")).build();
         ExtraService es2 = ExtraService.builder().id(11L).hall(hall).name("Soda").price(new BigDecimal("3.00")).build();
 
+        // existsById() используется сервисом для проверки существования зала (быстрее findById())
         when(hallRepository.existsById(1L)).thenReturn(true);
         when(extraServiceRepository.findByHallId(1L)).thenReturn(List.of(es1, es2));
 
@@ -61,20 +66,24 @@ class ExtraServiceServiceTest {
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0).getId()).isEqualTo(10L);
-        assertThat(result.get(0).getHallId()).isEqualTo(1L);
+        assertThat(result.get(0).getHallId()).isEqualTo(1L); // hallId = hall.id из @ManyToOne
         assertThat(result.get(0).getName()).isEqualTo("Popcorn");
+        // isEqualByComparingTo — сравнивает BigDecimal по значению (5.00 == 5.0 == 5)
+        // equals() у BigDecimal учитывает scale: new BigDecimal("5.00").equals(new BigDecimal("5")) → false!
         assertThat(result.get(0).getPrice()).isEqualByComparingTo("5.00");
         assertThat(result.get(1).getName()).isEqualTo("Soda");
     }
 
     @Test
     void getExtraServicesByHallId_hallNotFound_throwsResourceNotFoundException() {
+        // existsById возвращает false → сервис должен кинуть ResourceNotFoundException
         when(hallRepository.existsById(99L)).thenReturn(false);
 
         assertThatThrownBy(() -> extraServiceService.getExtraServicesByHallId(99L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("99");
 
+        // Если зал не найден — findByHallId не должен вызываться
         verify(extraServiceRepository, never()).findByHallId(any());
     }
 
@@ -96,15 +105,20 @@ class ExtraServiceServiceTest {
 
         ExtraServiceDto result = extraServiceService.addExtraService(2L, request);
 
+        // ArgumentCaptor — проверяем что ExtraService был создан с правильным hall-объектом.
+        // Это ключевая проверка: сервис должен установить hall (не просто hallId) в ExtraService.
+        // JPA требует объект Hall (не просто Long id) для @ManyToOne FK.
         ArgumentCaptor<ExtraService> captor = ArgumentCaptor.forClass(ExtraService.class);
         verify(extraServiceRepository).save(captor.capture());
         ExtraService captured = captor.getValue();
 
+        // Проверяем что Hall-объект присвоен (не null)
         assertThat(captured.getHall()).isEqualTo(hall);
         assertThat(captured.getHall().getId()).isEqualTo(2L);
         assertThat(captured.getName()).isEqualTo("Nachos");
         assertThat(captured.getPrice()).isEqualByComparingTo("7.50");
 
+        // Проверяем возвращаемый DTO
         assertThat(result.getId()).isEqualTo(20L);
         assertThat(result.getHallId()).isEqualTo(2L);
         assertThat(result.getName()).isEqualTo("Nachos");
@@ -113,6 +127,7 @@ class ExtraServiceServiceTest {
 
     @Test
     void addExtraService_hallNotFound_throwsResourceNotFoundException() {
+        // findById возвращает empty → зал не найден → 404
         when(hallRepository.findById(77L)).thenReturn(Optional.empty());
 
         ExtraServiceCreateRequest request = ExtraServiceCreateRequest.builder()
@@ -124,6 +139,7 @@ class ExtraServiceServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("77");
 
+        // Если зал не найден — ExtraService не сохраняется
         verify(extraServiceRepository, never()).save(any());
     }
 }

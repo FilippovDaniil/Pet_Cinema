@@ -1,26 +1,85 @@
+# Конфигурация Grafana Promtail — агент сбора логов.
+# Promtail читает логи из Docker контейнеров и отправляет в Loki.
+# Архитектура: Docker stdout → promtail → Loki → Grafana.
+
 server:
+  # http_listen_port: 9080 — HTTP порт Promtail для метрик и готовности.
+  # /metrics — Prometheus метрики (количество отправленных строк, ошибки).
+  # /ready — healthcheck эндпоинт.
   http_listen_port: 9080
+
+  # grpc_listen_port: 0 — отключаем gRPC сервер (устанавливаем порт в 0 = отключено).
+  # gRPC нужен только для Promtail в режиме syslog получения — не используем.
   grpc_listen_port: 0
 
 positions:
+  # filename: /tmp/positions.yaml — файл с позициями чтения логов.
+  # Promtail хранит до какой строки дочитал каждый лог файл.
+  # При перезапуске Promtail — продолжает с последней позиции, не дублирует логи.
+  # /tmp — временная директория (при перезапуске контейнера файл теряется → повторное чтение с начала).
+  # В продакшн: монтировать том для персистентного хранения positions.yaml.
   filename: /tmp/positions.yaml
 
 clients:
+  # Список Loki инстансов для отправки логов.
   - url: http://loki:3100/loki/api/v1/push
+    # loki:3100 — Docker DNS резолвит "loki" в IP контейнера cinema-loki.
+    # /loki/api/v1/push — REST endpoint для записи логов (Loki Push API).
+    # Promtail батчует строки логов и отправляет POST запросами.
 
 scrape_configs:
+  # scrape_configs — правила сбора логов.
+  # Каждый job описывает откуда и как собирать логи.
   - job_name: cinema
+    # docker_sd_configs — Service Discovery через Docker API.
+    # Promtail подключается к Docker daemon и получает список контейнеров.
+    # Автоматически обнаруживает новые и удаляет остановленные контейнеры.
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
+        # unix:///var/run/docker.sock — путь к UNIX сокету Docker daemon.
+        # Promtail использует Docker API через сокет (не HTTP).
+        # В docker-compose.yml сокет монтируется: /var/run/docker.sock:/var/run/docker.sock
+
+        # refresh_interval: 5s — каждые 5 секунд проверяем список контейнеров.
+        # Если запустился новый контейнер → начинаем собирать его логи.
+        # Если контейнер остановился → перестаём собирать.
         refresh_interval: 5s
+
         filters:
+          # Фильтруем контейнеры: собираем логи ТОЛЬКО у тех, кто имеет Docker label.
           - name: label
             values: ["logging=cinema"]
+            # logging=cinema — метка которую мы устанавливаем в docker-compose.yml:
+            #   labels:
+            #     logging: "cinema"
+            # Это исключает системные контейнеры (zookeeper, postgres) от сбора логов.
+            # Только наши Spring Boot сервисы + frontend имеют эту метку.
+
     relabel_configs:
+    # relabel_configs — правила преобразования меток перед отправкой в Loki.
+    # __meta_* — метаданные от Docker Service Discovery (не отправляются в Loki).
+    # Через relabel_configs преобразуем их в Loki labels.
+
       - source_labels: ['__meta_docker_container_name']
+        # __meta_docker_container_name — имя Docker контейнера (с / в начале: "/cinema-auth").
         regex: '/(.*)'
+        # regex '/(.*) — убираем ведущий / из имени контейнера.
+        # Группа (.*) захватывает имя без /.
         target_label: 'container'
+        # Создаём Loki label "container" = "cinema-auth" (без /cinema-auth).
+        # В Grafana: {container="cinema-auth"} — фильтр логов конкретного сервиса.
+
       - source_labels: ['__meta_docker_container_log_stream']
+        # __meta_docker_container_log_stream — поток вывода: stdout или stderr.
+        # Большинство логов идёт в stdout (System.out в Java = stdout в Docker).
         target_label: 'logstream'
+        # Создаём Loki label "logstream" = "stdout" или "stderr".
+        # Полезно для фильтрации ошибок: {logstream="stderr"}.
+
       - source_labels: ['__meta_docker_container_label_logging_jobname']
+        # __meta_docker_container_label_logging_jobname — значение Docker label "logging_jobname".
+        # В docker-compose.yml: labels: logging_jobname: "cinema"
         target_label: 'job'
+        # Создаём Loki label "job" = "cinema".
+        # В Grafana: {job="cinema"} — фильтр всех cinema сервисов одним запросом.
+        # Используется в cinema-logs.json дашборде.

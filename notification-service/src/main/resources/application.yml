@@ -1,33 +1,60 @@
 server:
-  port: 8086
+  port: 8086  # порт notification-service. api-gateway маршрутизирует /api/notifications/** сюда.
+
 spring:
   application:
-    name: notification-service
+    name: notification-service  # имя для Eureka регистрации: lb://notification-service
+
   datasource:
+    # notification_db — отдельная БД для уведомлений (микросервисная изоляция данных).
+    # ${DB_HOST:localhost} — берётся из ENV переменной, дефолт localhost.
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/notification_db
     username: ${DB_USER:cinema}
     password: ${DB_PASS:cinema}
+
   jpa:
     hibernate:
+      # ddl-auto: update — Hibernate создаёт таблицу notifications если её нет.
+      # При перезапуске: обновляет схему (добавляет колонки), не удаляет данные.
       ddl-auto: update
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
+      # group-id: notification-group — Kafka consumer group.
+      # Все экземпляры notification-service с одинаковым group-id совместно обрабатывают топики.
+      # Каждое сообщение обрабатывается только ОДНИМ экземпляром в группе.
       group-id: notification-group
+
+      # auto-offset-reset: earliest — при первом подключении читаем с самого начала топика.
+      # "earliest" — обрабатываем все накопленные сообщения (даже если consumer был оффлайн).
+      # Альтернатива "latest" — читать только новые сообщения (пропускать старые).
+      # Для уведомлений "earliest" предпочтительнее: не хотим пропускать события.
       auto-offset-reset: earliest
+
+      # StringDeserializer — получаем сырую JSON строку.
+      # Это отличие от order-service (JsonDeserializer → автоматическая конвертация в POJO).
+      # NotificationConsumer вручную парсит через ObjectMapper.readValue(message, EventClass.class).
+      # Плюс: универсальность, гибкость к изменениям схемы событий.
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
 eureka:
   client:
     service-url:
       defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/
   instance:
-    prefer-ip-address: true
+    prefer-ip-address: true  # регистрировать по IP, не по hostname (важно в Docker)
+
 jwt:
+  # Одинаковый секрет с auth-service для верификации токенов.
+  # ${JWT_SECRET:...} — из ENV переменной в Docker, дефолт для локальной разработки.
   secret: ${JWT_SECRET:mySecretKey12345678901234567890123456789012345678901234567890}
+
 logging:
   pattern:
+    # JSON формат логов для Loki + Grafana стека.
     console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss}","level":"%level","service":"notification-service","message":"%msg"}%n'

@@ -1,10 +1,41 @@
+# Grafana Dashboard Provisioning — настройка источника дашбордов при старте.
+# Grafana читает этот файл из /etc/grafana/provisioning/dashboards/
+# и загружает дашборды из JSON файлов в указанной директории.
+
+# apiVersion: 1 — версия формата файла provisioning.
 apiVersion: 1
+
+# providers — список провайдеров дашбордов (откуда загружать).
 providers:
   - name: Cinema Logs
+    # name: Cinema Logs — отображаемое имя провайдера в Grafana (для UI).
+
     orgId: 1
+    # orgId: 1 — организация Grafana (дефолтная организация "Main Org.").
+    # В multi-tenant Grafana можно иметь несколько организаций.
+
     folder: Cinema
+    # folder: Cinema — папка в Grafana UI где будут размещены дашборды.
+    # После provisioning: Dashboards → Cinema → Cinema System Logs.
+
     type: file
+    # type: file — дашборды загружаются из JSON файлов на диске.
+    # Альтернатива: database — Grafana хранит дашборды в своей БД.
+    # file подход = Infrastructure as Code (дашборды в git, версионируемые).
+
     disableDeletion: false
+    # disableDeletion: false — разрешаем удаление провизионированных дашбордов через UI.
+    # true — дашборды нельзя удалить через UI (только удалением JSON файла).
+
     editable: true
+    # editable: true — разрешаем редактирование дашбордов через Grafana UI.
+    # false — дашборды "read-only" (нельзя изменить через UI, только через JSON файл).
+    # true — для удобства разработки: можно экспериментировать с панелями в UI.
+
     options:
       path: /etc/grafana/provisioning/dashboards
+      # path — директория где Grafana ищет JSON файлы дашбордов.
+      # /etc/grafana/provisioning/dashboards монтируется из хоста:
+      #   ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+      # Grafana рекурсивно сканирует эту директорию и загружает все *.json файлы.
+      # cinema-logs.json в этой директории → автоматически загружается как дашборд.

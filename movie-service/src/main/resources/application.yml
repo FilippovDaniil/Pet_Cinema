@@ -1,40 +1,65 @@
 server:
-  port: 8082
+  port: 8082  # movie-service слушает на порту 8082 (api-gateway маршрутизирует /api/movies/** и /api/genres/**)
+
 spring:
   application:
-    name: movie-service
+    name: movie-service  # Имя, под которым сервис регистрируется в Eureka; api-gateway использует его в lb://movie-service
+
   datasource:
+    # ${VAR:default} — читает переменную окружения VAR; если не задана, использует default.
+    # В Docker: DB_HOST=movie-db (имя контейнера), DB_PORT=5432.
+    # Локально (без Docker): localhost:5432.
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/movie_db
     username: ${DB_USER:cinema}
     password: ${DB_PASS:cinema}
+
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: update  # update: Hibernate сравнивает схему с сущностями и добавляет недостающие колонки/таблицы.
+                        # Никогда не удаляет колонки — безопасно для продакшена с осторожностью.
+                        # create-drop: удалит таблицы при старте — только для тестов.
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+        dialect: org.hibernate.dialect.PostgreSQLDialect  # Говорим Hibernate: генерируй SQL для PostgreSQL
+                                                           # (иначе может использовать Generic SQL без специфики PG)
+
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
+      host: ${REDIS_HOST:localhost}  # В Docker: redis (имя контейнера), локально: localhost
+      port: ${REDIS_PORT:6379}       # Стандартный порт Redis
+
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}  # Адрес Kafka брокера
     producer:
+      # Эти настройки дублируют KafkaConfig.java. Spring Boot может подхватить их напрямую,
+      # но мы явно настраиваем ProducerFactory в KafkaConfig для большей гибкости.
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
 eureka:
   client:
     service-url:
+      # URL Eureka Server для регистрации. В Docker: EUREKA_HOST=service-discovery.
       defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/
   instance:
-    prefer-ip-address: true
+    prefer-ip-address: true  # Регистрируемся по IP, а не по hostname (надёжнее в Docker-сетях)
+
 jwt:
+  # Секрет для проверки JWT подписи. ДОЛЖЕН совпадать во всех сервисах.
+  # В Docker передаётся через env-переменную JWT_SECRET в docker-compose.yml.
+  # Длина: 60 символов = 480 бит > минимум 256 бит для HMAC-SHA256.
   secret: ${JWT_SECRET:mySecretKey12345678901234567890123456789012345678901234567890}
+
 redis:
-  movies-cache-key: "movies:list:all"
-  movies-cache-ttl: 600
-  sessions-cache-prefix: "sessions:movie:"
-  sessions-cache-ttl: 300
+  # Кастомные свойства для MovieService (инжектируются через @Value).
+  movies-cache-key: "movies:list:all"  # Ключ в Redis для кеша списка фильмов
+  movies-cache-ttl: 600                # TTL кеша в секундах (10 минут)
+  sessions-cache-prefix: "sessions:movie:"  # Префикс для кеша сеансов (пока не используется напрямую)
+  sessions-cache-ttl: 300              # TTL кеша сеансов в секундах (5 минут)
+
 logging:
   pattern:
+    # Структурированный JSON-лог. Каждая строка лога = один JSON-объект.
+    # promtail (агент Loki) подхватывает stdout → парсит JSON → отправляет в Loki → Grafana.
+    # %d — дата/время, %level — уровень (INFO/WARN/ERROR), %msg — текст сообщения.
     console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss}","level":"%level","service":"movie-service","message":"%msg"}%n'

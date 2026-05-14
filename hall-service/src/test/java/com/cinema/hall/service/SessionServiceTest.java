@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
+// Чистые unit-тесты SessionService без Spring Context и БД.
 @ExtendWith(MockitoExtension.class)
 class SessionServiceTest {
 
@@ -44,11 +45,13 @@ class SessionServiceTest {
     @InjectMocks
     private SessionService sessionService;
 
+    // Вспомогательный метод: создаёт Hall с заданным id
     private Hall buildHall(Long id) {
         return Hall.builder().id(id).name("Hall " + id).type(HallType.NORMAL)
                 .rowsCount(10).seatsPerRow(20).build();
     }
 
+    // Вспомогательный метод: создаёт Session, связанный с заданным Hall
     private Session buildSession(Long id, Hall hall) {
         return Session.builder()
                 .id(id)
@@ -69,13 +72,14 @@ class SessionServiceTest {
         Session s1 = buildSession(1L, hall);
         Session s2 = buildSession(2L, hall);
 
+        // Все параметры null → сервис вызывает findByFilters(null, null, null, null)
         when(sessionRepository.findByFilters(null, null, null, null)).thenReturn(List.of(s1, s2));
 
         List<SessionDto> result = sessionService.getSessions(null, null, null, null);
 
         assertThat(result).hasSize(2);
         assertThat(result.get(0).getId()).isEqualTo(1L);
-        assertThat(result.get(0).getHallId()).isEqualTo(1L);
+        assertThat(result.get(0).getHallId()).isEqualTo(1L); // hall.id из @ManyToOne навигации
         assertThat(result.get(0).isActive()).isTrue();
     }
 
@@ -93,6 +97,7 @@ class SessionServiceTest {
         assertThat(dto.getId()).isEqualTo(10L);
         assertThat(dto.getMovieId()).isEqualTo(5L);
         assertThat(dto.getHallId()).isEqualTo(3L);
+        // isEqualByComparingTo — правильное сравнение BigDecimal (12.50 == 12.5 == 12.500)
         assertThat(dto.getBasePrice()).isEqualByComparingTo("12.50");
         assertThat(dto.isActive()).isTrue();
     }
@@ -128,11 +133,14 @@ class SessionServiceTest {
 
         SessionDto result = sessionService.createSession(request);
 
+        // Используем ArgumentCaptor чтобы проверить объект Session ДО его сохранения
         ArgumentCaptor<Session> captor = ArgumentCaptor.forClass(Session.class);
         verify(sessionRepository).save(captor.capture());
         Session captured = captor.getValue();
 
+        // Ключевая проверка: новый сеанс должен быть активным
         assertThat(captured.isActive()).isTrue();
+        // Hall должен быть задан как объект (для JPA FK), а не просто Long
         assertThat(captured.getHall()).isEqualTo(hall);
         assertThat(captured.getMovieId()).isEqualTo(7L);
 
@@ -156,6 +164,7 @@ class SessionServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("88");
 
+        // Если зал не найден — session.save() не вызывается
         verify(sessionRepository, never()).save(any());
     }
 
@@ -169,7 +178,7 @@ class SessionServiceTest {
 
         SessionCreateRequest request = SessionCreateRequest.builder()
                 .movieId(9L)
-                .hallId(2L)
+                .hallId(2L)  // Меняем зал с 1L на 2L
                 .startTime(LocalDateTime.of(2026, 8, 1, 18, 0))
                 .endTime(LocalDateTime.of(2026, 8, 1, 20, 0))
                 .basePrice(new BigDecimal("20.00"))
@@ -186,7 +195,7 @@ class SessionServiceTest {
         SessionDto result = sessionService.updateSession(5L, request);
 
         assertThat(result.getMovieId()).isEqualTo(9L);
-        assertThat(result.getHallId()).isEqualTo(2L);
+        assertThat(result.getHallId()).isEqualTo(2L); // Зал сменился
         assertThat(result.getBasePrice()).isEqualByComparingTo("20.00");
     }
 
@@ -196,6 +205,7 @@ class SessionServiceTest {
     void deleteSession_softDelete_setsActiveFalseDoesNotCallDelete() {
         Hall hall = buildHall(1L);
         Session session = buildSession(3L, hall);
+        // Убеждаемся что до удаления сеанс активен
         assertThat(session.isActive()).isTrue();
 
         when(sessionRepository.findById(3L)).thenReturn(Optional.of(session));
@@ -203,11 +213,13 @@ class SessionServiceTest {
 
         sessionService.deleteSession(3L);
 
+        // Проверяем что save() был вызван с session.active = false
         ArgumentCaptor<Session> captor = ArgumentCaptor.forClass(Session.class);
         verify(sessionRepository).save(captor.capture());
-        assertThat(captor.getValue().isActive()).isFalse();
+        assertThat(captor.getValue().isActive()).isFalse(); // Флаг снят (мягкое удаление)
 
-        // Must NOT call hard delete
+        // Ключевая проверка: жёсткое удаление НЕ должно быть вызвано
+        // Мягкое удаление означает update (active=false), не физический DELETE
         verify(sessionRepository, never()).delete(any(Session.class));
         verify(sessionRepository, never()).deleteById(any());
     }
@@ -226,6 +238,7 @@ class SessionServiceTest {
 
         List<ExtraServiceDto> result = sessionService.getExtraServicesForSession(8L);
 
+        // Метод должен найти сеанс → получить hallId → вернуть услуги этого зала
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getId()).isEqualTo(30L);
         assertThat(result.get(0).getHallId()).isEqualTo(4L);

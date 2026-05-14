@@ -1,38 +1,62 @@
 version: '3.8'
+# version: '3.8' — версия Docker Compose файла.
+# Определяет доступные поля и синтаксис.
+# 3.8 — поддерживает: healthcheck, depends_on с condition, secrets, configs.
 
+# networks — определяем кастомные Docker сети.
 networks:
   cinema-network:
+    # driver: bridge — стандартный сетевой драйвер Docker для контейнеров на одном хосте.
+    # bridge сеть создаёт виртуальный сетевой интерфейс.
+    # Все контейнеры в cinema-network могут общаться между собой по имени контейнера
+    #   (Docker встроенный DNS: postgres-auth → 172.18.0.x).
+    # Контейнеры изолированы от внешнего мира (если не пробросить ports).
     driver: bridge
 
+# volumes — именованные Docker тома для персистентного хранения данных.
+# Данные в томах НЕ удаляются при docker-compose down (только при docker-compose down -v).
 volumes:
-  postgres-auth-data:
-  postgres-movie-data:
-  postgres-hall-data:
-  postgres-order-data:
-  postgres-support-data:
-  postgres-notification-data:
-  redis-data:
-  loki-data:
-  grafana-data:
+  postgres-auth-data:         # данные PostgreSQL для auth-service (таблицы users, refresh_tokens)
+  postgres-movie-data:        # данные PostgreSQL для movie-service (movies, genres, reviews)
+  postgres-hall-data:         # данные PostgreSQL для hall-service (halls, sessions)
+  postgres-order-data:        # данные PostgreSQL для order-service (orders, tickets, food_items)
+  postgres-support-data:      # данные PostgreSQL для support-service (tickets, messages)
+  postgres-notification-data: # данные PostgreSQL для notification-service (notifications)
+  redis-data:                 # данные Redis (blacklist токенов, кеш фильмов)
+  loki-data:                  # данные Loki (индексы логов, chunks)
+  grafana-data:               # данные Grafana (дашборды, пользователи, настройки)
 
 services:
   # ============ DATABASES ============
+  # Каждый микросервис имеет СВОЮ изолированную PostgreSQL БД.
+  # Это принцип "Database per Service" — сервисы не делят БД между собой.
+  # Преимущество: независимые схемы, независимые миграции, изоляция отказов.
+
   postgres-auth:
+    # image: postgres:15-alpine — официальный образ PostgreSQL 15.
+    # alpine — минималистичный Linux (меньше размер образа, меньше атаки поверхность).
     image: postgres:15-alpine
+    # container_name — фиксированное имя контейнера (иначе Docker генерирует случайное).
+    # Другие контейнеры в cinema-network обращаются по этому имени: postgres-auth:5432.
     container_name: postgres-auth
     environment:
-      POSTGRES_DB: auth_db
-      POSTGRES_USER: cinema
-      POSTGRES_PASSWORD: cinema
+      POSTGRES_DB: auth_db         # имя создаваемой БД при первом запуске
+      POSTGRES_USER: cinema        # суперпользователь PostgreSQL
+      POSTGRES_PASSWORD: cinema    # пароль (в продакшн: использовать secrets)
     volumes:
+      # postgres-auth-data:/var/lib/postgresql/data — монтируем том для данных.
+      # /var/lib/postgresql/data — стандартный путь хранения данных PostgreSQL.
+      # Без этого тома данные теряются при пересоздании контейнера.
       - postgres-auth-data:/var/lib/postgresql/data
     networks:
       - cinema-network
     healthcheck:
+      # pg_isready -U cinema -d auth_db — проверяет готовность PostgreSQL принимать соединения.
+      # CMD-SHELL — выполняет через shell (нужно для -U и -d флагов).
       test: ["CMD-SHELL", "pg_isready -U cinema -d auth_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 10s   # проверять каждые 10 секунд
+      timeout: 5s     # считать ошибкой если нет ответа за 5 секунд
+      retries: 5      # после 5 неудачных попыток = unhealthy
 
   postgres-movie:
     image: postgres:15-alpine
@@ -121,110 +145,205 @@ services:
 
   # ============ REDIS ============
   redis:
+    # image: redis:7-alpine — Redis 7 (последняя стабильная ветка на момент разработки).
     image: redis:7-alpine
     container_name: cinema-redis
     volumes:
+      # redis-data:/data — том для персистентного хранения Redis данных.
+      # Без тома: при перезапуске redis теряет blacklist токенов и кеш (некритично,
+      #   но пользователи не смогут выйти из системы без перезапуска если токены были в blacklist).
       - redis-data:/data
     networks:
       - cinema-network
     healthcheck:
+      # redis-cli ping — Redis отвечает "PONG" если работает.
+      # CMD (не CMD-SHELL) — прямой вызов, без shell.
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   # ============ KAFKA ============
+  # Apache Kafka требует ZooKeeper для управления кластером (классический режим).
+  # В Kafka 3.x+ есть KRaft режим без ZooKeeper — здесь используем классический.
+
   zookeeper:
+    # confluentinc/cp-zookeeper:7.6.0 — Confluent Platform ZooKeeper.
+    # Confluent — коммерческая компания на базе Apache Kafka (совместимые образы).
+    # 7.6.0 — версия Confluent Platform (соответствует Kafka 3.6.x).
     image: confluentinc/cp-zookeeper:7.6.0
     container_name: cinema-zookeeper
     environment:
+      # ZOOKEEPER_CLIENT_PORT: 2181 — стандартный порт ZooKeeper для клиентских подключений.
+      # Kafka подключается к ZooKeeper через этот порт.
       ZOOKEEPER_CLIENT_PORT: 2181
+      # ZOOKEEPER_TICK_TIME: 2000 — базовая единица времени ZooKeeper (в миллисекундах).
+      # Используется для heartbeats и таймаутов сессий.
       ZOOKEEPER_TICK_TIME: 2000
     networks:
       - cinema-network
 
   kafka:
+    # confluentinc/cp-kafka:7.6.0 — Confluent Platform Kafka broker.
     image: confluentinc/cp-kafka:7.6.0
     container_name: cinema-kafka
     depends_on:
+      # ZooKeeper должен быть запущен ДО Kafka (Kafka регистрируется в ZooKeeper).
+      # Нет condition: service_healthy — ZooKeeper не имеет healthcheck выше.
       - zookeeper
     environment:
+      # KAFKA_BROKER_ID: 1 — уникальный ID брокера в кластере.
+      # При одном брокере (dev среда) всегда 1.
       KAFKA_BROKER_ID: 1
+
+      # KAFKA_ZOOKEEPER_CONNECT — адрес ZooKeeper для Kafka.
+      # zookeeper:2181 — Docker DNS резолвит "zookeeper" в IP контейнера cinema-zookeeper.
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      # KAFKA_ADVERTISED_LISTENERS — адреса, которые Kafka анонсирует клиентам.
+      # PLAINTEXT://kafka:9092 — внутренний адрес (для контейнеров в cinema-network).
+      #   Микросервисы используют kafka:9092 (переменная KAFKA_BOOTSTRAP_SERVERS=kafka:9092).
+      # PLAINTEXT_HOST://localhost:29092 — внешний адрес (для подключения с хоста разработчика).
+      #   Полезно при локальной разработке с Kafka UI или kafka-console-consumer.
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+
+      # KAFKA_LISTENER_SECURITY_PROTOCOL_MAP — маппинг имён листенеров → протоколы.
+      # PLAINTEXT:PLAINTEXT — оба листенера используют незашифрованный протокол.
+      # В продакшн: PLAINTEXT_HOST:SSL для внешних подключений.
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+
+      # KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT — листенер для broker-to-broker коммуникации.
+      # При одном брокере это не важно, но обязательный параметр конфигурации.
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1 — репликация внутреннего топика __consumer_offsets.
+      # 1 — без репликации (одиночный брокер, нет смысла в репликации).
+      # В продакшн кластере: 3 (для отказоустойчивости).
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+      # KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true" — Kafka автоматически создаёт топики
+      # при первой публикации/подписке.
+      # Удобно для разработки: не нужно вручную создавать ticket-purchase, payment-request и т.д.
+      # В продакшн: обычно false (контролируем топики вручную).
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     ports:
+      # "29092:29092" — пробрасываем внешний порт (PLAINTEXT_HOST) на хост.
+      # Внутренний порт 9092 НЕ проброшен — контейнеры обращаются через Docker сеть.
       - "29092:29092"
     networks:
       - cinema-network
     healthcheck:
+      # kafka-broker-api-versions — Kafka CLI утилита, успешно выполняется если брокер готов.
+      # Проверяет что Kafka broker принимает API запросы (не просто что процесс запущен).
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
-      interval: 30s
+      interval: 30s   # Kafka стартует дольше PostgreSQL — проверяем реже
       timeout: 10s
       retries: 5
 
   # ============ LOGGING ============
+  # Стек логирования: Loki + Promtail + Grafana (аналог ELK, но легче).
+  # Поток: контейнер stdout → promtail (агент сбора) → loki (хранилище) → grafana (UI).
+
   loki:
+    # grafana/loki:2.9.5 — Loki от Grafana Labs, лёгкое хранилище логов.
+    # Loki не парсит содержимое логов (как Elasticsearch) — только метаданные (labels).
+    # Хранит логи в chunks (сжатые блоки) эффективно на диске.
     image: grafana/loki:2.9.5
     container_name: cinema-loki
     ports:
+      # "3100:3100" — HTTP API Loki (push endpoint, query endpoint).
+      # Используется: promtail для отправки логов, Grafana для запросов.
       - "3100:3100"
     volumes:
+      # Монтируем конфигурационный файл Loki в контейнер.
       - ./infrastructure/loki/loki-config.yml:/etc/loki/local-config.yaml
+      # loki-data:/loki — том для хранения chunks и индексов.
       - loki-data:/loki
+    # command — переопределяем дефолтную команду запуска.
+    # -config.file — указываем путь к файлу конфигурации внутри контейнера.
     command: -config.file=/etc/loki/local-config.yaml
     networks:
       - cinema-network
 
   promtail:
+    # grafana/promtail:2.9.5 — агент сбора логов от Grafana Labs.
+    # Работает как sidecar/daemon: читает логи контейнеров и отправляет в Loki.
     image: grafana/promtail:2.9.5
     container_name: cinema-promtail
     volumes:
+      # /var/run/docker.sock:/var/run/docker.sock — UNIX socket Docker daemon.
+      # Promtail использует Docker API для получения логов контейнеров.
+      # Монтируем socket из хоста в контейнер (Docker-in-Docker подход для чтения логов).
+      # ВАЖНО: это даёт promtail доступ к Docker daemon хоста — только для dev среды.
       - /var/run/docker.sock:/var/run/docker.sock
+      # Конфигурация promtail — описывает как и откуда собирать логи.
       - ./infrastructure/promtail/promtail-config.yml:/etc/promtail/config.yml
     command: -config.file=/etc/promtail/config.yml
     networks:
       - cinema-network
     depends_on:
+      # Loki должен быть запущен до promtail — иначе promtail не сможет отправить логи.
       - loki
 
   grafana:
+    # grafana/grafana:10.4.2 — Grafana UI для визуализации данных из Loki.
     image: grafana/grafana:10.4.2
     container_name: cinema-grafana
     ports:
+      # "3000:3000" — Grafana Web UI.
+      # Доступен на http://localhost:3000 после запуска.
       - "3000:3000"
     environment:
+      # Credentials для Grafana (логин/пароль для входа в UI).
+      # В продакшн: использовать более сложный пароль или secrets.
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_SECURITY_ADMIN_USER: admin
     volumes:
+      # grafana-data — том для Grafana: пользователи, дашборды (созданные вручную), плагины.
       - grafana-data:/var/lib/grafana
+      # ./infrastructure/grafana/provisioning — автоматическая настройка Grafana при старте:
+      #   datasources/ — источники данных (Loki)
+      #   dashboards/ — преднастроенные дашборды
+      # Grafana читает эти файлы при первом запуске и настраивается автоматически.
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
     networks:
       - cinema-network
     depends_on:
+      # Loki должен быть готов до Grafana (иначе datasource не сможет подключиться).
       - loki
 
   # ============ MICROSERVICES ============
+  # Порядок запуска управляется depends_on с condition: service_healthy.
+  # Это гарантирует что базы данных готовы ДО старта Spring Boot приложений.
+
   service-discovery:
     build:
+      # context: . — Docker build context = корень проекта.
+      # Dockerfile может обращаться ко всем файлам в корне проекта.
       context: .
       dockerfile: service-discovery/Dockerfile
     container_name: cinema-eureka
     labels:
+      # logging: "cinema" — метка для promtail фильтрации.
+      # Promtail собирает логи только контейнеров с этой меткой.
       logging: "cinema"
+      # logging_jobname: "cinema" — используется как Loki label "job".
+      # В Grafana: {job="cinema"} — фильтр по всем cinema сервисам.
       logging_jobname: "cinema"
     ports:
+      # "8761:8761" — Eureka Server UI и API.
+      # http://localhost:8761 — дашборд с зарегистрированными сервисами.
       - "8761:8761"
     networks:
       - cinema-network
     healthcheck:
+      # wget --spider — проверяет доступность URL без скачивания тела.
+      # /actuator/health — Spring Boot Actuator endpoint (всегда HTTP 200 если сервис UP).
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8761/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 5
+    # service-discovery не зависит от других сервисов — запускается первым.
 
   api-gateway:
     build:
@@ -235,16 +354,23 @@ services:
       logging: "cinema"
       logging_jobname: "cinema"
     ports:
+      # "8080:8080" — единственная точка входа для внешних клиентов (React frontend, Postman).
+      # Все запросы /api/** приходят сюда и проксируются в соответствующие сервисы.
       - "8080:8080"
     environment:
-      EUREKA_HOST: service-discovery
+      EUREKA_HOST: service-discovery   # имя контейнера Eureka (Docker DNS)
       EUREKA_PORT: 8761
-      REDIS_HOST: redis
+      REDIS_HOST: redis                # имя контейнера Redis
       REDIS_PORT: 6379
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092  # брокер Kafka (для CacheInvalidationConsumer)
+      # JWT_SECRET — ЕДИНЫЙ секрет для всей системы.
+      # Все сервисы используют ОДИНАКОВЫЙ секрет для валидации токенов.
+      # В продакшн: хранить в Vault, Kubernetes secrets или Docker secrets.
       JWT_SECRET: mySecretKey12345678901234567890123456789012345678901234567890
     depends_on:
       service-discovery:
+        # condition: service_healthy — ждёт пока service-discovery пройдёт healthcheck.
+        # Гарантирует что Eureka готова принять регистрацию api-gateway.
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -260,8 +386,8 @@ services:
       logging: "cinema"
       logging_jobname: "cinema"
     environment:
-      DB_HOST: postgres-auth
-      DB_PORT: 5432
+      DB_HOST: postgres-auth    # хост PostgreSQL (Docker DNS → IP контейнера postgres-auth)
+      DB_PORT: 5432             # стандартный порт PostgreSQL
       DB_USER: cinema
       DB_PASS: cinema
       EUREKA_HOST: service-discovery
@@ -271,13 +397,14 @@ services:
       JWT_SECRET: mySecretKey12345678901234567890123456789012345678901234567890
     depends_on:
       postgres-auth:
-        condition: service_healthy
+        condition: service_healthy    # PostgreSQL готов принимать соединения
       service-discovery:
-        condition: service_healthy
+        condition: service_healthy    # Eureka готова для регистрации
       redis:
-        condition: service_healthy
+        condition: service_healthy    # Redis готов (нужен для blacklist токенов)
     networks:
       - cinema-network
+    # auth-service не пробрасывает порты наружу — доступен только через api-gateway:8080
 
   movie-service:
     build:
@@ -294,9 +421,9 @@ services:
       DB_PASS: cinema
       EUREKA_HOST: service-discovery
       EUREKA_PORT: 8761
-      REDIS_HOST: redis
+      REDIS_HOST: redis            # для кеша movies:list:all (TTL 10 мин)
       REDIS_PORT: 6379
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092  # публикует MovieUpdateEvent в movie-update топик
       JWT_SECRET: mySecretKey12345678901234567890123456789012345678901234567890
     depends_on:
       postgres-movie:
@@ -304,7 +431,7 @@ services:
       service-discovery:
         condition: service_healthy
       kafka:
-        condition: service_healthy
+        condition: service_healthy    # Kafka нужна для публикации событий обновления фильмов
     networks:
       - cinema-network
 
@@ -331,6 +458,7 @@ services:
         condition: service_healthy
       service-discovery:
         condition: service_healthy
+      # Нет зависимости от kafka — hall-service не использует Kafka
     networks:
       - cinema-network
 
@@ -349,8 +477,9 @@ services:
       DB_PASS: cinema
       EUREKA_HOST: service-discovery
       EUREKA_PORT: 8761
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092  # публикует PaymentRequestEvent + TicketPurchaseEvent
       JWT_SECRET: mySecretKey12345678901234567890123456789012345678901234567890
+      # Нет REDIS_HOST — order-service не использует Redis напрямую
     depends_on:
       postgres-order:
         condition: service_healthy
@@ -376,13 +505,15 @@ services:
       DB_PASS: cinema
       EUREKA_HOST: service-discovery
       EUREKA_PORT: 8761
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092  # публикует SupportMessageEvent в support-message топик
       JWT_SECRET: mySecretKey12345678901234567890123456789012345678901234567890
     depends_on:
       postgres-support:
         condition: service_healthy
       service-discovery:
         condition: service_healthy
+      # Нет зависимости от kafka в depends_on — но kafka нужна для работы.
+      # При старте раньше Kafka Spring Kafka будет повторять подключение (retry).
     networks:
       - cinema-network
 
@@ -401,7 +532,7 @@ services:
       DB_PASS: cinema
       EUREKA_HOST: service-discovery
       EUREKA_PORT: 8761
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092  # consumer: ticket-purchase + support-message топики
       JWT_SECRET: mySecretKey12345678901234567890123456789012345678901234567890
     depends_on:
       postgres-notification:
@@ -424,9 +555,13 @@ services:
     environment:
       EUREKA_HOST: service-discovery
       EUREKA_PORT: 8761
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092  # consumer: payment-request топик
+      # ORDER_SERVICE_HOST — имя контейнера order-service (Docker DNS).
+      # Используется в webhookUrl: http://order-service:8084/api/orders/webhook/payment
       ORDER_SERVICE_HOST: order-service
       ORDER_SERVICE_PORT: 8084
+      # Нет DB_HOST — payment-simulator не имеет БД
+      # Нет JWT_SECRET — payment-simulator не валидирует JWT (webhook endpoint не защищён)
     depends_on:
       service-discovery:
         condition: service_healthy
@@ -437,11 +572,18 @@ services:
 
   frontend:
     build:
+      # context: ./frontend — контекст сборки для React приложения.
+      # В отличие от Java сервисов: context = frontend/ директория (там Dockerfile и package.json).
       context: ./frontend
     container_name: cinema-frontend
     ports:
+      # "80:80" — HTTP порт Nginx (раздача React build + проксирование /api на api-gateway).
+      # http://localhost — главная страница React приложения.
       - "80:80"
     depends_on:
+      # Зависит только от api-gateway (без condition) — нет healthcheck у api-gateway.
+      # Nginx стартует быстро, api-gateway может ещё не быть готов — это нормально:
+      # Nginx проксирует запросы, клиент увидит ошибку если api-gateway не готов.
       - api-gateway
     networks:
       - cinema-network

@@ -1,4 +1,5 @@
 {
+  "_comment": "Grafana Dashboard: Cinema System Logs. Автоматически загружается при старте Grafana через provisioning. Отображает логи всех cinema микросервисов из Loki.",
   "__inputs": [],
   "__requires": [
     {
@@ -37,6 +38,7 @@
   "links": [],
   "panels": [
     {
+      "_comment": "Панель 1: Total Log Count — счётчик всех логов за выбранный период. Тип stat (одно число). Позиция: w=6 из 24 (четверть ширины), y=0 (первая строка).",
       "datasource": {
         "type": "loki",
         "uid": "${datasource}"
@@ -71,6 +73,7 @@
             "type": "loki",
             "uid": "${datasource}"
           },
+          "_comment_expr": "LogQL запрос: count_over_time — считает строки логов за $__range (выбранный временной диапазон). {job='cinema'} — фильтр по Loki label (все cinema сервисы). container=~'$container' — фильтр по переменной дашборда (regex: .* = все, или конкретный контейнер).",
           "expr": "count_over_time({job=\"cinema\", container=~\"$container\"}[$__range])",
           "legendFormat": "Log Count",
           "queryType": "instant",
@@ -81,6 +84,7 @@
       "type": "stat"
     },
     {
+      "_comment": "Панель 2: Error Count — счётчик ERROR логов за период. |= 'ERROR' — фильтр строк содержащих слово ERROR.",
       "datasource": {
         "type": "loki",
         "uid": "${datasource}"
@@ -115,6 +119,7 @@
             "type": "loki",
             "uid": "${datasource}"
           },
+          "_comment_expr": "LogQL: count_over_time с фильтром |= 'ERROR'. Считает строки где уровень лога ERROR. В JSON логах формата {level:'ERROR',...} это работает как подстрока поиска.",
           "expr": "count_over_time({job=\"cinema\", container=~\"$container\"} |= \"ERROR\" [$__range])",
           "legendFormat": "Error Count",
           "queryType": "instant",
@@ -125,6 +130,7 @@
       "type": "stat"
     },
     {
+      "_comment": "Панель 3: Warning Count — счётчик WARN логов за период.",
       "datasource": {
         "type": "loki",
         "uid": "${datasource}"
@@ -169,6 +175,7 @@
       "type": "stat"
     },
     {
+      "_comment": "Панель 4: Cinema Service Logs — основная панель логов. Тип logs (строки текста). Занимает всю ширину (w=24), высоту 20 строк. Отображает реальные строки логов с метками.",
       "datasource": {
         "type": "loki",
         "uid": "${datasource}"
@@ -185,14 +192,14 @@
       },
       "id": 4,
       "options": {
-        "dedupStrategy": "none",
-        "enableLogDetails": true,
-        "prettifyLogMessage": false,
+        "dedupStrategy": "none",       "_dedupStrategy_comment": "none = не дедупликировать одинаковые строки",
+        "enableLogDetails": true,      "_enableLogDetails_comment": "клик на строку → развернуть детали (все поля JSON)",
+        "prettifyLogMessage": false,   "_prettifyLogMessage_comment": "не форматировать JSON в multi-line (оставляем в одну строку)",
         "showCommonLabels": false,
-        "showLabels": true,
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": true
+        "showLabels": true,            "_showLabels_comment": "показывать Loki labels слева от строки лога",
+        "showTime": true,              "_showTime_comment": "показывать timestamp каждой строки",
+        "sortOrder": "Descending",     "_sortOrder_comment": "новые логи сверху",
+        "wrapLogMessage": true         "_wrapLogMessage_comment": "перенос длинных строк"
       },
       "pluginVersion": "10.4.2",
       "targets": [
@@ -201,6 +208,7 @@
             "type": "loki",
             "uid": "${datasource}"
           },
+          "_comment_expr": "LogQL stream selector: {job='cinema', container=~'$container'}. Без агрегации — возвращает сами строки логов (range query). $container — переменная дашборда (см. templating ниже).",
           "expr": "{job=\"cinema\", container=~\"$container\"}",
           "legendFormat": "",
           "queryType": "range",
@@ -212,11 +220,16 @@
     }
   ],
   "refresh": "30s",
+  "_refresh_comment": "Автообновление дашборда каждые 30 секунд. Новые логи появляются без ручного F5.",
   "schemaVersion": 39,
+  "_schemaVersion_comment": "Версия схемы JSON формата Grafana дашборда. 39 = Grafana 10.4.x.",
   "tags": ["cinema", "logs", "loki"],
+  "_tags_comment": "Теги для поиска дашборда в Grafana UI.",
   "templating": {
+    "_comment": "Переменные дашборда — интерактивные фильтры в UI. Dropdowns в верхней части дашборда.",
     "list": [
       {
+        "_comment": "Переменная 1: datasource — выбор источника данных Loki. Тип datasource: автоматически находит все Loki datasources. Позволяет переключаться между Loki инстансами если их несколько.",
         "current": {},
         "hide": 0,
         "includeAll": false,
@@ -231,6 +244,7 @@
         "type": "datasource"
       },
       {
+        "_comment": "Переменная 2: container — выбор контейнера для фильтрации. Тип query: значения берутся из Loki (label_values). includeAll: true + allValue: '.*' — опция 'All' выбирает все контейнеры (regex .*). multi: true — можно выбрать несколько контейнеров одновременно. refresh: 2 — обновляет список при смене временного диапазона.",
         "current": {
           "selected": true,
           "text": "All",
@@ -241,6 +255,7 @@
           "uid": "${datasource}"
         },
         "definition": "label_values({job=\"cinema\"}, container)",
+        "_definition_comment": "LogQL запрос для получения значений переменной: все уникальные значения label 'container' для {job='cinema'}. Результат: cinema-auth, cinema-movie, cinema-gateway и т.д.",
         "hide": 0,
         "includeAll": true,
         "allValue": ".*",
@@ -264,9 +279,13 @@
     "from": "now-1h",
     "to": "now"
   },
+  "_time_comment": "Дефолтный временной диапазон при открытии дашборда: последний 1 час.",
   "timepicker": {},
   "timezone": "browser",
+  "_timezone_comment": "browser = использовать часовой пояс браузера (локальное время пользователя).",
   "title": "Cinema System Logs",
+  "_title_comment": "Название дашборда в Grafana UI.",
   "uid": "cinema-logs-dashboard",
+  "_uid_comment": "Уникальный идентификатор дашборда. Используется в URL: /d/cinema-logs-dashboard. Должен быть уникальным в Grafana инстансе.",
   "version": 1
 }

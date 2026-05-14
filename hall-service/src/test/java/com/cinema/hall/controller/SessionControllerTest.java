@@ -26,8 +26,11 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+// Тесты веб-слоя SessionController.
+// @WebMvcTest загружает только контроллер + фильтры Spring Security + конвертеры.
+// Бизнес-логика (SessionService) замокирована.
 @WebMvcTest(SessionController.class)
-@Import(com.cinema.hall.config.SecurityConfig.class)
+@Import(com.cinema.hall.config.SecurityConfig.class) // Загружаем SecurityConfig с JwtAuthFilter
 class SessionControllerTest {
 
     @Autowired
@@ -39,9 +42,13 @@ class SessionControllerTest {
     @MockBean
     private SessionService sessionService;
 
+    // @MockBean JwtUtils — необходим потому что JwtAuthFilter (из SecurityConfig)
+    // имеет зависимость на JwtUtils через @RequiredArgsConstructor.
+    // Без этого Spring Context не запустится.
     @MockBean
     private com.cinema.hall.security.JwtUtils jwtUtils;
 
+    // Вспомогательный метод для создания тестового SessionDto.
     private SessionDto buildSessionDto(Long id) {
         return SessionDto.builder()
                 .id(id)
@@ -61,6 +68,8 @@ class SessionControllerTest {
         SessionDto s1 = buildSessionDto(1L);
         SessionDto s2 = buildSessionDto(2L);
 
+        // isNull() — матчер Mockito для null-аргумента (аналог eq(null), но более явный).
+        // Все параметры null → сервис вызывается с getSessions(null, null, null, null).
         when(sessionService.getSessions(isNull(), isNull(), isNull(), isNull()))
                 .thenReturn(List.of(s1, s2));
 
@@ -75,9 +84,12 @@ class SessionControllerTest {
     void getSessions_withMovieIdParam_returns200() throws Exception {
         SessionDto s = buildSessionDto(3L);
 
+        // eq(5L) — только первый параметр (movieId) задан, остальные null.
+        // isNull() — явно указываем что параметры должны быть null.
         when(sessionService.getSessions(eq(5L), isNull(), isNull(), isNull()))
                 .thenReturn(List.of(s));
 
+        // ?movieId=5 → Spring конвертирует "5" в Long.valueOf(5L) для @RequestParam Long movieId
         mockMvc.perform(get("/api/sessions").param("movieId", "5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
@@ -87,7 +99,7 @@ class SessionControllerTest {
     // ------------------------------------------------------------------ POST /api/sessions
 
     @Test
-    @WithMockUser(authorities = "ROLE_ADMIN")
+    @WithMockUser(authorities = "ROLE_ADMIN") // Аутентифицированный ADMIN
     void createSession_withAdminRole_returns201() throws Exception {
         SessionCreateRequest request = SessionCreateRequest.builder()
                 .movieId(1L)
@@ -102,10 +114,10 @@ class SessionControllerTest {
         when(sessionService.createSession(any(SessionCreateRequest.class))).thenReturn(response);
 
         mockMvc.perform(post("/api/sessions")
-                        .with(csrf())
+                        .with(csrf())                          // Нужен для POST в Spring Security тестах
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isCreated())
+                .andExpect(status().isCreated())               // HTTP 201
                 .andExpect(jsonPath("$.id").value(10))
                 .andExpect(jsonPath("$.active").value(true));
     }
@@ -115,9 +127,12 @@ class SessionControllerTest {
     @Test
     @WithMockUser(authorities = "ROLE_ADMIN")
     void deleteSession_withAdminRole_returns204() throws Exception {
+        // doNothing() — мокируем void-метод
         doNothing().when(sessionService).deleteSession(5L);
 
         mockMvc.perform(delete("/api/sessions/5").with(csrf()))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isNoContent()); // HTTP 204 No Content
+        // Примечание: deleteSession — мягкое удаление (active=false), не физическое.
+        // С точки зрения HTTP интерфейса это не важно — всегда 204.
     }
 }

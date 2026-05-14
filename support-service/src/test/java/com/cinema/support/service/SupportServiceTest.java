@@ -31,9 +31,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
+// @ExtendWith(MockitoExtension.class) — подключает JUnit 5 расширение Mockito.
+// Инициализирует @Mock и @InjectMocks поля ДО каждого теста.
+// НЕТ Spring Context — тесты быстрые, без БД, без Kafka.
 @ExtendWith(MockitoExtension.class)
 class SupportServiceTest {
 
+    // @Mock — Mockito создаёт proxy-заглушки вместо реальных зависимостей.
+    // Все вызовы к репозиториям и KafkaTemplate управляются через when().thenReturn().
     @Mock
     private SupportTicketRepository supportTicketRepository;
 
@@ -43,25 +48,34 @@ class SupportServiceTest {
     @Mock
     private KafkaTemplate<String, Object> kafkaTemplate;
 
+    // @InjectMocks — Mockito создаёт реальный SupportService и инжектирует все @Mock поля.
+    // Эквивалент: new SupportService(supportTicketRepository, supportMessageRepository, kafkaTemplate)
     @InjectMocks
     private SupportService supportService;
 
+    // @Captor — ArgumentCaptor позволяет захватить аргументы переданные в мок.
+    // Используется для проверки что именно было передано в repository.save() или kafkaTemplate.send().
     @Captor
     private ArgumentCaptor<SupportTicket> ticketCaptor;
 
     @Captor
     private ArgumentCaptor<SupportMessage> messageCaptor;
 
+    // kafkaEventCaptor типизирован как Object — т.к. kafkaTemplate.send() принимает Object.
+    // Позже кастируем к SupportMessageEvent для проверки полей.
     @Captor
     private ArgumentCaptor<Object> kafkaEventCaptor;
 
-    // ------------------------------------------------------------------ helpers
+    // ================================================================
+    // Вспомогательные методы создания тестовых данных
+    // ================================================================
 
+    // buildTicket — создаёт SupportTicket для использования в тестах как "возвращаемое значение" мока.
     private SupportTicket buildTicket(Long id, Long clientId, Long adminId) {
         return SupportTicket.builder()
                 .id(id)
                 .clientId(clientId)
-                .adminId(adminId)
+                .adminId(adminId)     // null = нет назначенного администратора
                 .subject("Test Subject")
                 .status(TicketStatus.OPEN)
                 .createdAt(LocalDateTime.now())
@@ -69,6 +83,7 @@ class SupportServiceTest {
                 .build();
     }
 
+    // buildMessage — создаёт SupportMessage для использования в тестах.
     private SupportMessage buildMessage(Long id, Long ticketId, Long senderId) {
         return SupportMessage.builder()
                 .id(id)
@@ -79,34 +94,41 @@ class SupportServiceTest {
                 .build();
     }
 
-    // ------------------------------------------------------------------ createTicket
+    // ================================================================
+    // createTicket тесты
+    // ================================================================
 
     @Test
     void createTicket_success_savedWithOpenStatusAndClientId() {
+        // Arrange: запрос на создание тикета
         SupportTicketCreateRequest request = SupportTicketCreateRequest.builder()
                 .subject("My issue").build();
 
+        // Мок: репозиторий "сохраняет" тикет и возвращает сущность с id=1
         SupportTicket saved = buildTicket(1L, 42L, null);
         saved.setSubject("My issue");
         saved.setStatus(TicketStatus.OPEN);
-
         when(supportTicketRepository.save(any(SupportTicket.class))).thenReturn(saved);
 
+        // Act: вызываем сервисный метод
         SupportTicketDto result = supportService.createTicket(request, 42L);
 
+        // Assert: проверяем что в репозиторий передана правильная сущность
         verify(supportTicketRepository).save(ticketCaptor.capture());
-        SupportTicket captured = ticketCaptor.getValue();
+        SupportTicket captured = ticketCaptor.getValue();  // аргумент переданный в save()
 
-        assertThat(captured.getClientId()).isEqualTo(42L);
-        assertThat(captured.getSubject()).isEqualTo("My issue");
-        assertThat(captured.getStatus()).isEqualTo(TicketStatus.OPEN);
+        assertThat(captured.getClientId()).isEqualTo(42L);   // клиент установлен правильно
+        assertThat(captured.getSubject()).isEqualTo("My issue");  // тема из запроса
+        assertThat(captured.getStatus()).isEqualTo(TicketStatus.OPEN);  // статус OPEN
 
+        // Проверяем возвращённый DTO
         assertThat(result.getClientId()).isEqualTo(42L);
-        assertThat(result.getStatus()).isEqualTo("OPEN");
+        assertThat(result.getStatus()).isEqualTo("OPEN");  // enum → String
     }
 
     @Test
     void createTicket_setsTimestamps_notNull() {
+        // Проверяем что createTicket устанавливает createdAt и updatedAt
         SupportTicketCreateRequest request = SupportTicketCreateRequest.builder()
                 .subject("Timestamps test").build();
 
@@ -115,49 +137,63 @@ class SupportServiceTest {
 
         supportService.createTicket(request, 10L);
 
+        // Захватываем аргумент save() и проверяем timestamps
         verify(supportTicketRepository).save(ticketCaptor.capture());
         SupportTicket captured = ticketCaptor.getValue();
 
+        // Сервис явно устанавливает LocalDateTime.now() — не через @PrePersist
         assertThat(captured.getCreatedAt()).isNotNull();
         assertThat(captured.getUpdatedAt()).isNotNull();
     }
 
-    // ------------------------------------------------------------------ getMyTickets
+    // ================================================================
+    // getMyTickets тест
+    // ================================================================
 
     @Test
     void getMyTickets_returnsList() {
+        // Arrange: у клиента 5L есть 2 тикета
         SupportTicket t1 = buildTicket(1L, 5L, null);
         SupportTicket t2 = buildTicket(2L, 5L, null);
-
         when(supportTicketRepository.findByClientId(5L)).thenReturn(List.of(t1, t2));
 
+        // Act
         List<SupportTicketDto> result = supportService.getMyTickets(5L);
 
+        // Assert: 2 тикета, оба принадлежат клиенту 5L
         assertThat(result).hasSize(2);
         assertThat(result.get(0).getClientId()).isEqualTo(5L);
         assertThat(result.get(1).getClientId()).isEqualTo(5L);
     }
 
-    // ------------------------------------------------------------------ getAllTickets
+    // ================================================================
+    // getAllTickets тест
+    // ================================================================
 
     @Test
     void getAllTickets_returnsAll() {
+        // Arrange: 3 тикета от разных клиентов
         SupportTicket t1 = buildTicket(1L, 1L, null);
         SupportTicket t2 = buildTicket(2L, 2L, null);
-        SupportTicket t3 = buildTicket(3L, 3L, 10L);
+        SupportTicket t3 = buildTicket(3L, 3L, 10L);  // с назначенным admin=10
 
         when(supportTicketRepository.findAll()).thenReturn(List.of(t1, t2, t3));
 
+        // Act
         List<SupportTicketDto> result = supportService.getAllTickets();
 
+        // Assert: все 3 тикета возвращены
         assertThat(result).hasSize(3);
     }
 
-    // ------------------------------------------------------------------ sendMessage
+    // ================================================================
+    // sendMessage тесты
+    // ================================================================
 
     @Test
     void sendMessage_byClient_ownerAccess_kafkaPublishedWithAdminRecipient() {
-        SupportTicket ticket = buildTicket(1L, 1L, 2L);  // adminId=2
+        // Тикет: clientId=1, adminId=2 (есть назначенный администратор)
+        SupportTicket ticket = buildTicket(1L, 1L, 2L);
         SupportMessage saved = buildMessage(10L, 1L, 1L);
 
         when(supportTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
@@ -166,16 +202,19 @@ class SupportServiceTest {
 
         SupportMessageRequest req = SupportMessageRequest.builder().content("Hello").build();
 
+        // Act: CLIENT (senderId=1 = clientId=1) отправляет сообщение
         SupportMessageDto result = supportService.sendMessage(1L, req, 1L, "CLIENT");
 
+        // Assert: сообщение сохранено с правильными полями
         verify(supportMessageRepository).save(messageCaptor.capture());
         assertThat(messageCaptor.getValue().getSenderId()).isEqualTo(1L);
         assertThat(messageCaptor.getValue().getContent()).isEqualTo("Hello");
 
-        // recipientId = adminId = 2
+        // Assert: Kafka событие опубликовано с recipientId = adminId = 2
+        // Логика: CLIENT отправляет → уведомить ADMIN (isAdmin=false → recipientId = ticket.getAdminId())
         verify(kafkaTemplate).send(eq("support-message"), eq("1"), kafkaEventCaptor.capture());
         SupportMessageEvent event = (SupportMessageEvent) kafkaEventCaptor.getValue();
-        assertThat(event.getRecipientId()).isEqualTo(2L);
+        assertThat(event.getRecipientId()).isEqualTo(2L);  // adminId=2
         assertThat(event.getSenderId()).isEqualTo(1L);
         assertThat(event.getTicketId()).isEqualTo(1L);
         assertThat(event.getContent()).isEqualTo("Hello");
@@ -185,7 +224,8 @@ class SupportServiceTest {
 
     @Test
     void sendMessage_byAdmin_anyAccess_kafkaPublishedWithClientRecipient() {
-        SupportTicket ticket = buildTicket(1L, 1L, 99L);  // clientId=1, adminId=99
+        // Тикет: clientId=1, adminId=99
+        SupportTicket ticket = buildTicket(1L, 1L, 99L);
         SupportMessage saved = buildMessage(20L, 1L, 99L);
         saved.setContent("Admin reply");
 
@@ -195,18 +235,22 @@ class SupportServiceTest {
 
         SupportMessageRequest req = SupportMessageRequest.builder().content("Admin reply").build();
 
+        // Act: ADMIN (senderId=99) отправляет сообщение
         supportService.sendMessage(1L, req, 99L, "ADMIN");
 
-        // recipientId = clientId = 1 (isAdmin ? ticket.getClientId() : ticket.getAdminId())
+        // Assert: recipientId = clientId = 1
+        // Логика: ADMIN отправляет → уведомить CLIENT (isAdmin=true → recipientId = ticket.getClientId())
         verify(kafkaTemplate).send(eq("support-message"), eq("1"), kafkaEventCaptor.capture());
         SupportMessageEvent event = (SupportMessageEvent) kafkaEventCaptor.getValue();
-        assertThat(event.getRecipientId()).isEqualTo(1L);
+        assertThat(event.getRecipientId()).isEqualTo(1L);  // clientId=1
         assertThat(event.getSenderId()).isEqualTo(99L);
     }
 
     @Test
     void sendMessage_byAdmin_noRecipient_kafkaNotCalled() {
-        // CLIENT sends message when adminId is null → recipientId = null → kafka NOT sent
+        // Тест: CLIENT отправляет сообщение когда adminId=null → recipientId=null → Kafka НЕ вызывается.
+        // Название теста misleading: это на самом деле CLIENT sends, no admin assigned yet.
+        // adminId=null: администратор ещё не назначен на тикет.
         SupportTicket ticketNoAdmin = buildTicket(2L, 1L, null);  // clientId=1, adminId=null
         SupportMessage savedMsg = buildMessage(31L, 2L, 1L);
 
@@ -215,42 +259,51 @@ class SupportServiceTest {
         when(supportTicketRepository.save(any(SupportTicket.class))).thenReturn(ticketNoAdmin);
 
         SupportMessageRequest req = SupportMessageRequest.builder().content("Client msg no admin").build();
+        // Act: CLIENT отправляет сообщение, но adminId=null → recipientId=null
         supportService.sendMessage(2L, req, 1L, "CLIENT");
 
+        // Assert: Kafka НЕ вызван (нет кому уведомлять)
         verify(kafkaTemplate, never()).send(any(), any(), any());
     }
 
     @Test
     void sendMessage_notOwnerNotAdmin_throwsAccessDeniedException() {
-        SupportTicket ticket = buildTicket(1L, 1L, null);  // clientId=1
-
+        // Тикет принадлежит clientId=1. Чужой клиент senderId=5 пытается отправить сообщение.
+        SupportTicket ticket = buildTicket(1L, 1L, null);
         when(supportTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
 
         SupportMessageRequest req = SupportMessageRequest.builder().content("Unauthorized").build();
 
-        // senderId=5 is not owner (clientId=1) and role=CLIENT
+        // Assert: бросает AccessDeniedException (не ResourceNotFoundException)
+        // isOwner=false (5 ≠ 1), isAdmin=false (role="CLIENT") → AccessDeniedException
         assertThatThrownBy(() -> supportService.sendMessage(1L, req, 5L, "CLIENT"))
                 .isInstanceOf(AccessDeniedException.class);
 
+        // Сообщение и Kafka событие НЕ сохранены
         verify(supportMessageRepository, never()).save(any());
         verify(kafkaTemplate, never()).send(any(), any(), any());
     }
 
     @Test
     void sendMessage_ticketNotFound_throwsResourceNotFoundException() {
+        // Несуществующий ticketId=999
         when(supportTicketRepository.findById(999L)).thenReturn(Optional.empty());
 
         SupportMessageRequest req = SupportMessageRequest.builder().content("msg").build();
 
+        // Assert: ResourceNotFoundException с сообщением содержащим "999"
         assertThatThrownBy(() -> supportService.sendMessage(999L, req, 1L, "CLIENT"))
                 .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("999");
+                .hasMessageContaining("999");  // "Support ticket not found: 999"
     }
 
-    // ------------------------------------------------------------------ getMessages
+    // ================================================================
+    // getMessages тесты
+    // ================================================================
 
     @Test
     void getMessages_ownerCanAccess_returnsMessages() {
+        // clientId=7 может читать свой тикет
         SupportTicket ticket = buildTicket(1L, 7L, null);
         SupportMessage msg = buildMessage(1L, 1L, 7L);
 
@@ -265,26 +318,26 @@ class SupportServiceTest {
 
     @Test
     void getMessages_adminCanAccess_returnsMessages() {
-        SupportTicket ticket = buildTicket(1L, 7L, 20L);
+        // ADMIN userId=99 может читать любой тикет (даже если не clientId и не adminId тикета)
+        SupportTicket ticket = buildTicket(1L, 7L, 20L);  // clientId=7, adminId=20
         SupportMessage msg1 = buildMessage(1L, 1L, 7L);
         SupportMessage msg2 = buildMessage(2L, 1L, 20L);
 
         when(supportTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
         when(supportMessageRepository.findByTicketId(1L)).thenReturn(List.of(msg1, msg2));
 
-        // Admin (different from clientId) can still access
+        // userId=99 не совпадает с clientId=7, но role="ADMIN" → доступ разрешён
         List<SupportMessageDto> result = supportService.getMessages(1L, 99L, "ADMIN");
 
-        assertThat(result).hasSize(2);
+        assertThat(result).hasSize(2);  // оба сообщения возвращены
     }
 
     @Test
     void getMessages_strangerCannotAccess_throwsAccessDeniedException() {
+        // userId=55 не владелец (clientId=7) и не ADMIN → AccessDeniedException
         SupportTicket ticket = buildTicket(1L, 7L, null);
-
         when(supportTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
 
-        // userId=55 is not owner (clientId=7) and role=CLIENT
         assertThatThrownBy(() -> supportService.getMessages(1L, 55L, "CLIENT"))
                 .isInstanceOf(AccessDeniedException.class);
     }
@@ -298,47 +351,59 @@ class SupportServiceTest {
                 .hasMessageContaining("404");
     }
 
-    // ------------------------------------------------------------------ assignAdmin
+    // ================================================================
+    // assignAdmin тесты
+    // ================================================================
 
     @Test
     void assignAdmin_success_setsAdminIdAndUpdatedAt() {
+        // Тикет без администратора (adminId=null)
         SupportTicket ticket = buildTicket(1L, 5L, null);
 
         when(supportTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
         when(supportTicketRepository.save(any(SupportTicket.class))).thenReturn(ticket);
 
+        // Act: назначаем администратора adminId=88
         SupportTicketDto result = supportService.assignAdmin(1L, 88L);
 
+        // Assert: в save() передана сущность с adminId=88 и обновлённым updatedAt
         verify(supportTicketRepository).save(ticketCaptor.capture());
         SupportTicket captured = ticketCaptor.getValue();
 
-        assertThat(captured.getAdminId()).isEqualTo(88L);
-        assertThat(captured.getUpdatedAt()).isNotNull();
+        assertThat(captured.getAdminId()).isEqualTo(88L);  // adminId обновлён
+        assertThat(captured.getUpdatedAt()).isNotNull();   // updatedAt установлен
     }
 
     @Test
     void assignAdmin_notFound_throwsResourceNotFoundException() {
+        // Тикет 777 не существует
         when(supportTicketRepository.findById(777L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> supportService.assignAdmin(777L, 1L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("777");
 
+        // save() не вызван (не достигли этой строки — исключение раньше)
         verify(supportTicketRepository, never()).save(any());
     }
 
-    // ------------------------------------------------------------------ closeTicket
+    // ================================================================
+    // closeTicket тесты
+    // ================================================================
 
     @Test
     void closeTicket_success_setsStatusClosed() {
+        // Тикет в статусе OPEN
         SupportTicket ticket = buildTicket(1L, 5L, null);
-        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);  // предусловие
 
         when(supportTicketRepository.findById(1L)).thenReturn(Optional.of(ticket));
         when(supportTicketRepository.save(any(SupportTicket.class))).thenReturn(ticket);
 
+        // Act
         SupportTicketDto result = supportService.closeTicket(1L);
 
+        // Assert: статус изменён на CLOSED
         verify(supportTicketRepository).save(ticketCaptor.capture());
         SupportTicket captured = ticketCaptor.getValue();
 
@@ -348,23 +413,29 @@ class SupportServiceTest {
 
     @Test
     void closeTicket_alreadyClosed_stillSetsClosed() {
+        // Идемпотентность: закрыть уже закрытый тикет — безопасно
         SupportTicket ticket = buildTicket(2L, 5L, null);
-        ticket.setStatus(TicketStatus.CLOSED);
+        ticket.setStatus(TicketStatus.CLOSED);  // уже закрыт
 
         when(supportTicketRepository.findById(2L)).thenReturn(Optional.of(ticket));
         when(supportTicketRepository.save(any(SupportTicket.class))).thenReturn(ticket);
 
+        // Act: закрываем снова
         SupportTicketDto result = supportService.closeTicket(2L);
 
+        // Assert: статус остался CLOSED
         verify(supportTicketRepository).save(ticketCaptor.capture());
         assertThat(ticketCaptor.getValue().getStatus()).isEqualTo(TicketStatus.CLOSED);
         assertThat(result.getStatus()).isEqualTo("CLOSED");
     }
 
-    // ------------------------------------------------------------------ kafkaPublished_verifyCapturedEvent
+    // ================================================================
+    // Тест: детальная проверка Kafka события
+    // ================================================================
 
     @Test
     void kafkaPublished_verifyCapturedEvent_containsCorrectFields() {
+        // Тикет: clientId=10, adminId=20
         SupportTicket ticket = buildTicket(5L, 10L, 20L);
         SupportMessage saved = buildMessage(100L, 5L, 20L);
         saved.setContent("Event verify");
@@ -375,20 +446,25 @@ class SupportServiceTest {
 
         SupportMessageRequest req = SupportMessageRequest.builder().content("Event verify").build();
 
-        // Admin sends → recipientId = clientId = 10
+        // ADMIN (senderId=20) отправляет сообщение → recipientId = clientId = 10
         supportService.sendMessage(5L, req, 20L, "ADMIN");
 
+        // Отдельные Captor для topic и key (помимо kafkaEventCaptor для значения)
         ArgumentCaptor<String> topicCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
         verify(kafkaTemplate).send(topicCaptor.capture(), keyCaptor.capture(), kafkaEventCaptor.capture());
 
+        // Проверяем топик — должен быть "support-message"
         assertThat(topicCaptor.getValue()).isEqualTo("support-message");
+        // Проверяем ключ — должен быть ticketId.toString() = "5"
+        // Ключ определяет партицию: все сообщения одного тикета → одна партиция → порядок гарантирован
         assertThat(keyCaptor.getValue()).isEqualTo("5");
 
+        // Проверяем само событие
         SupportMessageEvent event = (SupportMessageEvent) kafkaEventCaptor.getValue();
         assertThat(event.getTicketId()).isEqualTo(5L);
-        assertThat(event.getSenderId()).isEqualTo(20L);
+        assertThat(event.getSenderId()).isEqualTo(20L);       // кто отправил
         assertThat(event.getContent()).isEqualTo("Event verify");
-        assertThat(event.getRecipientId()).isEqualTo(10L);
+        assertThat(event.getRecipientId()).isEqualTo(10L);    // кому уведомление (clientId)
     }
 }

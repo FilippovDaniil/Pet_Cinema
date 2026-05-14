@@ -1,42 +1,83 @@
+/* Глобальный сброс и базовые стили — применяется ко всему приложению */
+
+/* * — universal selector: применяется ко ВСЕМ HTML элементам */
 * {
+  /* box-sizing: border-box — ширина/высота включают padding и border.
+     По умолчанию (content-box) padding добавляется СВЕРХ указанной ширины.
+     С border-box: width: 200px = элемент ровно 200px включая border и padding.
+     Упрощает расчёт размеров: 50% + 10px padding = всегда 50% ширины родителя. */
   box-sizing: border-box;
+
+  /* margin: 0 + padding: 0 — сброс дефолтных отступов браузера.
+     Браузеры добавляют свои отступы для h1-h6, p, ul, body и т.д.
+     Сброс гарантирует одинаковое отображение во всех браузерах. */
   margin: 0;
   padding: 0;
 }
 
 body {
+  /* font-family — стек шрифтов (браузер использует первый доступный).
+     'Segoe UI' — системный шрифт Windows.
+     Tahoma, Geneva, Verdana — фоллбэки для других ОС.
+     sans-serif — дженерик фоллбэк (любой без засечек). */
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+
+  /* background: #0a0a0a — почти чёрный фон (тёмная тема Netflix-стиль). */
   background: #0a0a0a;
+
+  /* color: #fff — белый текст по умолчанию (контрастно на тёмном фоне). */
   color: #fff;
+
+  /* min-height: 100vh — страница занимает минимум всю высоту экрана.
+     vh (viewport height): 100vh = 100% высоты окна браузера.
+     Гарантирует что фон покрывает весь экран даже при малом количестве контента. */
   min-height: 100vh;
 }
 
 a {
+  /* color: inherit — ссылки наследуют цвет родительского элемента.
+     По умолчанию браузер делает ссылки синими (color: blue).
+     inherit отменяет это — ссылки будут того же цвета что окружающий текст. */
   color: inherit;
+
+  /* text-decoration: none — убираем подчёркивание ссылок.
+     Стилизация выполняется явно в компонентах (hover эффекты и т.д.). */
   text-decoration: none;
 }
 
 button {
+  /* cursor: pointer — курсор-рука при наведении на кнопки.
+     По умолчанию кнопки имеют cursor: default.
+     pointer (рука) — стандартный UX паттерн для кликабельных элементов. */
   cursor: pointer;
 }
 
+/* input, textarea, select — форм-элементы наследуют шрифт body */
 input, textarea, select {
+  /* font-family: inherit — форм-элементы по умолчанию используют системный шрифт,
+     игнорируя font-family body. inherit заставляет их использовать наш шрифт. */
   font-family: inherit;
 }
 
+/* Кастомизация скроллбара (только Webkit-браузеры: Chrome, Edge, Safari) */
+
+/* ::-webkit-scrollbar — ширина/высота полосы прокрутки */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 8px; /* вертикальный скроллбар: ширина 8px */
 }
 
+/* ::-webkit-scrollbar-track — дорожка (трек) под ползунком */
 ::-webkit-scrollbar-track {
-  background: #1a1a1a;
+  background: #1a1a1a; /* тёмно-серый фон трека */
 }
 
+/* ::-webkit-scrollbar-thumb — ползунок скроллбара */
 ::-webkit-scrollbar-thumb {
-  background: #e50914;
-  border-radius: 4px;
+  background: #e50914;   /* красный ползунок (цвет бренда Netflix) */
+  border-radius: 4px;    /* скруглённые углы ползунка */
 }
 
+/* ::-webkit-scrollbar-thumb:hover — ползунок при наведении */
 ::-webkit-scrollbar-thumb:hover {
-  background: #b30710;
+  background: #b30710;   /* более тёмный красный при наведении (hover эффект) */
 }

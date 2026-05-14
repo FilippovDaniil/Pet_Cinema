@@ -69,25 +69,28 @@ class MovieServiceTest {
     private CommentRepository commentRepository;
 
     @Mock
-    private StringRedisTemplate redisTemplate;
+    private StringRedisTemplate redisTemplate; // Мок Redis — не нужен реальный сервер
 
     @Mock
-    private ObjectMapper objectMapper;
+    private ObjectMapper objectMapper; // Мок Jackson — контролируем сериализацию в тестах
 
     @Mock
-    private KafkaTemplate<String, Object> kafkaTemplate;
+    private KafkaTemplate<String, Object> kafkaTemplate; // Мок Kafka — не нужен реальный брокер
 
     @Mock
-    private ValueOperations<String, String> valueOperations;
+    private ValueOperations<String, String> valueOperations; // Мок для redisTemplate.opsForValue()
 
-    @InjectMocks
+    @InjectMocks // Mockito создаёт реальный MovieService и инжектирует все @Mock поля
     private MovieService movieService;
 
-    private static final String CACHE_KEY = "movies:list:all";
+    private static final String CACHE_KEY = "movies:list:all"; // Тестовые константы
     private static final long CACHE_TTL = 600L;
 
     @BeforeEach
     void setUp() {
+        // @Value поля ("moviesCacheKey", "moviesCacheTtl") не заполняются Mockito — Spring не запускается.
+        // ReflectionTestUtils.setField(): устанавливает private поле через Java Reflection.
+        // Это стандартный способ тестировать @Value поля без @SpringBootTest.
         ReflectionTestUtils.setField(movieService, "moviesCacheKey", CACHE_KEY);
         ReflectionTestUtils.setField(movieService, "moviesCacheTtl", CACHE_TTL);
     }
@@ -99,16 +102,19 @@ class MovieServiceTest {
     @Test
     @DisplayName("getAllMovies: no filters, cache miss → repository called, result cached")
     void getAllMovies_noFilters_cacheMiss() throws Exception {
+        // Настраиваем мок Redis: opsForValue() → valueOperations, get(key) → null (кеш пуст)
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(CACHE_KEY)).thenReturn(null);
+        when(valueOperations.get(CACHE_KEY)).thenReturn(null); // Cache MISS
 
         Genre action = Genre.builder().id(1L).name("Action").build();
         Movie movie = buildMovie(1L, "Test Movie", action);
+        // PageImpl — тестовая реализация Page: список + pageable + totalElements
         Page<Movie> moviePage = new PageImpl<>(List.of(movie), PageRequest.of(0, 10), 1);
 
         when(movieRepository.findAllWithFilters(null, null, null, PageRequest.of(0, 10)))
                 .thenReturn(moviePage);
         when(reviewRepository.findByMovieId(1L)).thenReturn(Collections.emptyList());
+        // Мокируем ObjectMapper.writeValueAsString() — иначе он попытается сериализовать реально
         when(objectMapper.writeValueAsString(any())).thenReturn("{\"content\":[]}");
 
         PageResponse<MovieDto> result = movieService.getAllMovies(null, null, null, 0, 10);
@@ -117,7 +123,9 @@ class MovieServiceTest {
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).getTitle()).isEqualTo("Test Movie");
 
+        // Репозиторий должен был быть вызван (кеша не было)
         verify(movieRepository).findAllWithFilters(null, null, null, PageRequest.of(0, 10));
+        // Результат должен был быть закеширован: set(key, json, duration)
         verify(valueOperations).set(eq(CACHE_KEY), anyString(), any());
     }
 
@@ -126,28 +134,32 @@ class MovieServiceTest {
     void getAllMovies_noFilters_cacheHit() throws Exception {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
+        // Имитируем Cache HIT: Redis возвращает JSON-строку
         String cachedJson = "{\"content\":[{\"id\":1,\"title\":\"Cached Movie\"}],\"page\":0,\"size\":10,\"totalElements\":1,\"totalPages\":1,\"last\":true}";
-        when(valueOperations.get(CACHE_KEY)).thenReturn(cachedJson);
+        when(valueOperations.get(CACHE_KEY)).thenReturn(cachedJson); // Cache HIT
 
         PageResponse<MovieDto> cachedResponse = PageResponse.<MovieDto>builder()
                 .content(List.of(MovieDto.builder().id(1L).title("Cached Movie").build()))
                 .page(0).size(10).totalElements(1).totalPages(1).last(true)
                 .build();
 
+        // Мокируем ObjectMapper.readValue() — возвращаем готовый объект без реальной десериализации
         when(objectMapper.readValue(eq(cachedJson), any(TypeReference.class))).thenReturn(cachedResponse);
 
         PageResponse<MovieDto> result = movieService.getAllMovies(null, null, null, 0, 10);
 
         assertThat(result).isNotNull();
         assertThat(result.getContent()).hasSize(1);
-        assertThat(result.getContent().get(0).getTitle()).isEqualTo("Cached Movie");
+        assertThat(result.getContent().get(0).getTitle()).isEqualTo("Cached Movie"); // Данные из кеша
 
+        // Ключевая проверка: БД не вызывалась — данные взяты из кеша
         verify(movieRepository, never()).findAllWithFilters(any(), any(), any(), any());
     }
 
     @Test
     @DisplayName("getAllMovies: with genre filter → cache NOT checked, repository called directly")
     void getAllMovies_withFilters_noCache() {
+        // При наличии фильтра кеш не используется вообще
         Genre action = Genre.builder().id(1L).name("Action").build();
         Movie movie = buildMovie(1L, "Action Movie", action);
         Page<Movie> moviePage = new PageImpl<>(List.of(movie), PageRequest.of(0, 10), 1);
@@ -162,6 +174,7 @@ class MovieServiceTest {
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).getTitle()).isEqualTo("Action Movie");
 
+        // never(): redisTemplate.opsForValue() вообще не вызывался — кеш игнорируется при фильтрах
         verify(redisTemplate, never()).opsForValue();
         verify(movieRepository).findAllWithFilters(eq("Action"), any(), any(), any());
     }
@@ -233,10 +246,10 @@ class MovieServiceTest {
                 .genreIds(List.of(1L))
                 .build();
 
-        Movie savedMovie = buildMovie(10L, "New Movie", action);
+        Movie savedMovie = buildMovie(10L, "New Movie", action); // "Результат" сохранения в БД
 
-        when(genreRepository.findById(1L)).thenReturn(Optional.of(action));
-        when(movieRepository.save(any(Movie.class))).thenReturn(savedMovie);
+        when(genreRepository.findById(1L)).thenReturn(Optional.of(action)); // Жанр найден
+        when(movieRepository.save(any(Movie.class))).thenReturn(savedMovie); // save() возвращает объект с id
 
         MovieDto result = movieService.createMovie(req, 1L);
 
@@ -244,10 +257,11 @@ class MovieServiceTest {
         assertThat(result.getTitle()).isEqualTo("New Movie");
         assertThat(result.getId()).isEqualTo(10L);
 
-        verify(genreRepository).findById(1L);
-        verify(movieRepository).save(any(Movie.class));
-        verify(redisTemplate).delete(CACHE_KEY);
-        verify(kafkaTemplate).send(eq("movie-update"), eq("10"), any());
+        // Проверяем что все побочные эффекты выполнились:
+        verify(genreRepository).findById(1L);          // Жанр был запрошен из репозитория
+        verify(movieRepository).save(any(Movie.class)); // Фильм был сохранён
+        verify(redisTemplate).delete(CACHE_KEY);        // Кеш был инвалидирован (DEL movies:list:all)
+        verify(kafkaTemplate).send(eq("movie-update"), eq("10"), any()); // Kafka-событие было отправлено
     }
 
     @Test
@@ -351,12 +365,18 @@ class MovieServiceTest {
 
         movieService.deleteMovie(7L);
 
+        // Проверяем что фильм удалён из БД
         verify(movieRepository).delete(movie);
+        // Кеш инвалидирован
         verify(redisTemplate).delete(CACHE_KEY);
 
+        // ArgumentCaptor<Object>: перехватываем третий аргумент send() — событие MovieUpdateEvent.
+        // Используем Object (не MovieUpdateEvent) потому что KafkaTemplate<String, Object>.
         ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
         verify(kafkaTemplate).send(eq("movie-update"), eq("7"), eventCaptor.capture());
 
+        // hasFieldOrPropertyWithValue(): AssertJ проверяет поле объекта через reflection или getter.
+        // Работает для любого объекта, не нужно кастовать к конкретному типу.
         Object sentEvent = eventCaptor.getValue();
         assertThat(sentEvent).hasFieldOrPropertyWithValue("action", "DELETED");
         assertThat(sentEvent).hasFieldOrPropertyWithValue("movieId", 7L);
@@ -503,6 +523,8 @@ class MovieServiceTest {
     // Helper methods
     // ────────────────────────────────────────────────────────────────────────────
 
+    // Вспомогательный метод для создания тестового фильма.
+    // Централизует создание Movie в тестах — при изменении класса Movie достаточно обновить один метод.
     private Movie buildMovie(Long id, String title, Genre genre) {
         return Movie.builder()
                 .id(id)

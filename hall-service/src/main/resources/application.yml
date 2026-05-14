@@ -1,30 +1,58 @@
 server:
-  port: 8083
+  port: 8083  # hall-service слушает на порту 8083 (movie-service=8082, auth-service=8081, gateway=8080)
+
 spring:
   application:
-    name: hall-service
+    name: hall-service  # Имя сервиса в Eureka. Другие сервисы обращаются через lb://hall-service
+
   datasource:
+    # ${VAR:default} — если переменная окружения VAR не задана, используется default.
+    # В Docker: DB_HOST=hall-db (имя контейнера в docker-compose.yml)
+    # Локально: localhost (для запуска через IDEA без Docker)
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/hall_db
     username: ${DB_USER:cinema}
     password: ${DB_PASS:cinema}
+
   jpa:
     hibernate:
+      # update — Hibernate сравнивает текущую схему с @Entity-классами и применяет ALTER TABLE.
+      # НЕ удаляет существующие данные (в отличие от create-drop).
+      # Для продакшн БД лучше использовать Flyway/Liquibase, но для учебного проекта достаточно.
       ddl-auto: update
     properties:
       hibernate:
+        # Явно задаём диалект PostgreSQL для корректной генерации SQL (PostgreSQL-специфичный синтаксис).
+        # Без этого Hibernate использует generic SQL, который может не поддерживать некоторые возможности.
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
   data:
     redis:
+      # Redis-адрес. В Docker: REDIS_HOST=redis (имя контейнера).
+      # hall-service сам не использует Redis для кеширования, но spring-boot-starter-data-redis
+      # требует подключения при старте. В тестах это подавляется через @MockBean.
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+
 eureka:
   client:
     service-url:
+      # Адрес Eureka Server. В Docker: EUREKA_HOST=service-discovery (имя контейнера).
+      # Локально: localhost:8761 (стандартный порт Eureka).
       defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/
   instance:
+    # prefer-ip-address: true — Eureka регистрирует сервис по IP-адресу контейнера, а не hostname.
+    # В Docker hostname может быть недоступен другим сервисам; IP всегда работает.
     prefer-ip-address: true
+
 jwt:
+  # Секрет для проверки JWT подписи. Должен совпадать с секретом auth-service!
+  # В Docker передаётся через JWT_SECRET в docker-compose.yml (один секрет для всех сервисов).
+  # Минимальная длина: 32 символа (256 бит для HMAC-SHA256).
   secret: ${JWT_SECRET:mySecretKey12345678901234567890123456789012345678901234567890}
+
 logging:
   pattern:
+    # JSON-формат логов для Loki/Grafana. Каждая строка лога = один JSON-объект.
+    # Promtail (агент сбора логов) читает stdout контейнера и отправляет в Loki.
+    # Grafana отображает структурированные логи с фильтрацией по полям (service, level и т.д.).
     console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss}","level":"%level","service":"hall-service","message":"%msg"}%n'

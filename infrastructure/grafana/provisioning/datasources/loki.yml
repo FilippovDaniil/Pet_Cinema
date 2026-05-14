@@ -1,9 +1,40 @@
+# Grafana Datasource Provisioning — автоматическое добавление источника данных при старте.
+# Grafana читает файлы из /etc/grafana/provisioning/datasources/ при первом запуске.
+# Это устраняет необходимость вручную добавлять datasource через UI.
+
+# apiVersion: 1 — версия формата файла provisioning Grafana.
 apiVersion: 1
+
+# datasources — список источников данных для автоматического добавления.
 datasources:
   - name: Loki
+    # name: Loki — отображаемое имя datasource в Grafana UI.
+    # В дашбордах можно ссылаться по имени: datasource: {type: loki, uid: "..."}.
+
     type: loki
+    # type: loki — тип datasource (плагин).
+    # Grafana имеет встроенный Loki плагин (не нужно устанавливать дополнительно).
+
     access: proxy
+    # access: proxy — Grafana server проксирует запросы к Loki.
+    # Альтернатива: direct — браузер клиента напрямую обращается к Loki.
+    # proxy предпочтительнее: Loki не доступен из браузера (нет публичного порта в цепочке),
+    #   запросы идут через Grafana контейнер который находится в cinema-network.
+
     url: http://loki:3100
+    # url — адрес Loki API.
+    # loki:3100 — Docker DNS резолвит "loki" в IP контейнера cinema-loki.
+    # Grafana (в режиме proxy) отправляет запросы на этот URL.
+
     isDefault: true
+    # isDefault: true — этот datasource выбран по умолчанию при создании новых панелей.
+    # Полезно: в дашбордах не нужно явно указывать datasource.
+
     version: 1
+    # version: 1 — версия этой конфигурации datasource.
+    # При обновлении конфигурации нужно увеличивать версию для применения изменений.
+
     editable: false
+    # editable: false — запрещает редактирование datasource через Grafana UI.
+    # Изменения можно вносить только через этот файл (Infrastructure as Code).
+    # Предотвращает случайное изменение URL или настроек через UI.

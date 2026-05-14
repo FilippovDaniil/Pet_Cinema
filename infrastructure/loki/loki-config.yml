@@ -1,30 +1,76 @@
+# Конфигурация Grafana Loki — лёгкое хранилище логов.
+# Loki работает по принципу "index labels, store chunks" —
+#   индексирует только метаданные (labels: container, job, level),
+#   содержимое логов хранит в сжатых блоках (chunks) без индексации.
+# Это делает Loki дешевле Elasticsearch при схожей функциональности для логов.
+
+# auth_enabled: false — отключаем аутентификацию Loki.
+# В продакшн: true + настройка tenants для multi-tenant изоляции.
+# Для dev среды false — не нужно передавать X-Scope-OrgID заголовок.
 auth_enabled: false
 
 server:
+  # http_listen_port: 3100 — HTTP порт Loki API.
+  # Promtail отправляет логи: POST http://loki:3100/loki/api/v1/push
+  # Grafana запрашивает: GET http://loki:3100/loki/api/v1/query_range
   http_listen_port: 3100
 
 common:
+  # instance_addr: 127.0.0.1 — адрес текущего экземпляра Loki.
+  # Используется в ring (распределённый режим) для идентификации.
+  # 127.0.0.1 — одиночный экземпляр (не кластер).
   instance_addr: 127.0.0.1
+
+  # path_prefix: /loki — корневая директория для всех данных Loki.
+  # Chunks и индексы будут в /loki/chunks и /loki/index соответственно.
+  # В Docker контейнере этот путь монтируется как том: loki-data:/loki
   path_prefix: /loki
+
   storage:
     filesystem:
+      # chunks_directory — директория для хранения сжатых блоков логов.
+      # Каждый chunk содержит временной диапазон логов определённого потока (stream).
       chunks_directory: /loki/chunks
+
+      # rules_directory — директория для правил алертинга (не используем в проекте).
       rules_directory: /loki/rules
+
+  # replication_factor: 1 — количество копий данных.
+  # 1 — нет репликации (одиночный экземпляр).
+  # В продакшн кластере: 3 (для отказоустойчивости при падении одного узла).
   replication_factor: 1
+
   ring:
     kvstore:
+      # store: inmemory — хранилище для ring membership (кто входит в кластер).
+      # inmemory — данные кольца в памяти (подходит для одиночного экземпляра).
+      # В кластере: consul, etcd или memberlist.
       store: inmemory
 
 schema_config:
   configs:
-    - from: 2020-10-24
-      store: tsdb
-      object_store: filesystem
-      schema: v13
+    # Конфигурация схемы хранения данных.
+    # Можно иметь несколько конфигураций для разных временных диапазонов (миграции).
+    - from: 2020-10-24       # дата начала применения этой схемы
+      store: tsdb            # движок хранения индексов: TSDB (Time Series Database).
+                             # Более эффективен чем boltdb-shipper для больших объёмов.
+      object_store: filesystem  # хранение chunks: filesystem (локальный диск).
+                                # В облаке: s3, gcs, azure.
+      schema: v13            # версия схемы Loki.
+                             # v13 — актуальная для Loki 2.9.x (поддерживает TSDB + новые features).
       index:
-        prefix: index_
-        period: 24h
+        prefix: index_       # префикс файлов индексов (используется при хранении).
+        period: 24h          # период разбивки индексов.
+                             # Каждые 24 часа создаётся новый файл индекса.
+                             # Упрощает retention: можно удалять старые файлы целиком.
 
 limits_config:
+  # reject_old_samples: true — отклонять старые логи.
+  # Если promtail отправляет логи с timestamp старше reject_old_samples_max_age — они игнорируются.
+  # Защита от: ошибочного импорта старых логов, неправильных timestamps.
   reject_old_samples: true
+
+  # reject_old_samples_max_age: 168h — максимальный возраст принимаемых логов.
+  # 168h = 7 дней. Логи старше 7 дней отклоняются.
+  # Настроено с запасом: при кратковременном падении promtail буфер не потеряет свежие логи.
   reject_old_samples_max_age: 168h

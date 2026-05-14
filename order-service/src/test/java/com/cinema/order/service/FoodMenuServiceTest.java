@@ -21,22 +21,33 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+// Юнит-тесты FoodMenuService. Нет Spring Context — только Mockito.
+// @ExtendWith(MockitoExtension.class) — подключает JUnit 5 расширение Mockito:
+//   инициализирует @Mock и @InjectMocks поля перед каждым тестом.
 @ExtendWith(MockitoExtension.class)
 class FoodMenuServiceTest {
 
+    // @Mock — Mockito создаёт proxy-заглушку вместо реального JPA репозитория.
+    // Никакой БД нет — вызовы к репозиторию управляются через when().thenReturn().
     @Mock
     private FoodItemRepository foodItemRepository;
 
+    // @InjectMocks — Mockito создаёт FoodMenuService и инжектирует все @Mock поля.
+    // Эквивалент: new FoodMenuService(foodItemRepository)
     @InjectMocks
     private FoodMenuService foodMenuService;
 
+    // @Captor — ArgumentCaptor для захвата аргументов переданных в мок.
+    // Позволяет проверить что именно было передано в foodItemRepository.save().
     @Captor
     private ArgumentCaptor<FoodItem> foodItemCaptor;
+
+    // ------------------------------------------------------------------ getAllFoodItems
 
     @Test
     @DisplayName("getAllFoodItems: returns list of FoodItemDtos mapped from repository")
     void getAllFoodItems_returnsDtoList() {
-        // Arrange
+        // Arrange: мокируем findAll() — возвращает 3 FoodItem
         FoodItem item1 = FoodItem.builder()
                 .id(1L)
                 .name("Popcorn")
@@ -61,13 +72,14 @@ class FoodMenuServiceTest {
         // Act
         List<FoodItemDto> result = foodMenuService.getAllFoodItems();
 
-        // Assert
+        // Assert: все 3 позиции корректно смаппированы в DTO
         assertThat(result).hasSize(3);
 
+        // Проверяем каждую позицию: id, name, price, category (Enum → String)
         assertThat(result.get(0).getId()).isEqualTo(1L);
         assertThat(result.get(0).getName()).isEqualTo("Popcorn");
         assertThat(result.get(0).getPrice()).isEqualByComparingTo(new BigDecimal("150.00"));
-        assertThat(result.get(0).getCategory()).isEqualTo("POPCORN");
+        assertThat(result.get(0).getCategory()).isEqualTo("POPCORN"); // Enum.name() → String
 
         assertThat(result.get(1).getId()).isEqualTo(2L);
         assertThat(result.get(1).getName()).isEqualTo("Cola");
@@ -83,26 +95,29 @@ class FoodMenuServiceTest {
     @Test
     @DisplayName("getAllFoodItems: empty repository returns empty list")
     void getAllFoodItems_emptyRepository_returnsEmptyList() {
-        // Arrange
+        // Arrange: пустое меню
         when(foodItemRepository.findAll()).thenReturn(List.of());
 
         // Act
         List<FoodItemDto> result = foodMenuService.getAllFoodItems();
 
-        // Assert
+        // Assert: не null, а пустой список
         assertThat(result).isEmpty();
     }
+
+    // ------------------------------------------------------------------ addFoodItem
 
     @Test
     @DisplayName("addFoodItem: saves FoodItem and returns mapped FoodItemDto")
     void addFoodItem_success() {
-        // Arrange
+        // Arrange: входной DTO с category как String
         FoodItemDto inputDto = FoodItemDto.builder()
                 .name("Hot Dog")
                 .price(new BigDecimal("200.00"))
-                .category("SNACK")
+                .category("SNACK")  // строка, сервис делает FoodCategory.valueOf("SNACK")
                 .build();
 
+        // Мок сохранения — возвращает сущность с назначенным id
         FoodItem savedItem = FoodItem.builder()
                 .id(10L)
                 .name("Hot Dog")
@@ -115,18 +130,19 @@ class FoodMenuServiceTest {
         // Act
         FoodItemDto result = foodMenuService.addFoodItem(inputDto);
 
-        // Assert
+        // Assert: проверяем что в save() передана корректная сущность
         verify(foodItemRepository).save(foodItemCaptor.capture());
         FoodItem capturedItem = foodItemCaptor.getValue();
         assertThat(capturedItem.getName()).isEqualTo("Hot Dog");
         assertThat(capturedItem.getPrice()).isEqualByComparingTo(new BigDecimal("200.00"));
-        assertThat(capturedItem.getCategory()).isEqualTo(FoodCategory.SNACK);
+        assertThat(capturedItem.getCategory()).isEqualTo(FoodCategory.SNACK); // String → Enum конвертация
 
+        // Проверяем возвращённый DTO
         assertThat(result).isNotNull();
         assertThat(result.getId()).isEqualTo(10L);
         assertThat(result.getName()).isEqualTo("Hot Dog");
         assertThat(result.getPrice()).isEqualByComparingTo(new BigDecimal("200.00"));
-        assertThat(result.getCategory()).isEqualTo("SNACK");
+        assertThat(result.getCategory()).isEqualTo("SNACK"); // Enum → String обратная конвертация
     }
 
     @Test
@@ -151,7 +167,7 @@ class FoodMenuServiceTest {
         // Act
         FoodItemDto result = foodMenuService.addFoodItem(inputDto);
 
-        // Assert
+        // Assert: категория DRINK корректно конвертируется в обе стороны
         assertThat(result.getCategory()).isEqualTo("DRINK");
         assertThat(result.getId()).isEqualTo(11L);
 

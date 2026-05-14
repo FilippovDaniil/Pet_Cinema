@@ -1,18 +1,46 @@
 spring:
   datasource:
+    # jdbc:tc:postgresql:15:///support_db_test — Testcontainers JDBC URL.
+    # Формат: jdbc:tc:<image>:<tag>:///<dbname>
+    # TC-драйвер автоматически запускает Docker контейнер postgres:15 при первом подключении.
+    # В SupportServiceIntegrationTest @DynamicPropertySource переопределяет этот URL
+    # на реальный URL запущенного контейнера (с динамическим портом).
+    # Для других тестов (не IntegrationTest) этот URL обеспечивает отдельный контейнер.
     url: jdbc:tc:postgresql:15:///support_db_test
+    # ContainerDatabaseDriver — Testcontainers JDBC прокси-драйвер.
+    # Перехватывает первый getConnection() и запускает Docker контейнер.
+    # @DynamicPropertySource переопределяет на org.postgresql.Driver для IntegrationTest.
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+
   jpa:
     hibernate:
+      # create-drop — Hibernate создаёт все таблицы при старте и удаляет при остановке.
+      # Гарантирует чистую схему для каждого тестового запуска (нет остатков от предыдущих тестов).
+      # В продакшн application.yml используется update (сохраняет данные между перезапусками).
       ddl-auto: create-drop
     properties:
       hibernate:
+        # Явный PostgreSQL диалект для тестовой БД.
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
   kafka:
+    # В SupportServiceIntegrationTest Kafka полностью исключена через:
+    # spring.autoconfigure.exclude=...KafkaAutoConfiguration
+    # Это значение не используется в IntegrationTest, но нужно чтобы Spring не ругался
+    # на отсутствие конфигурации в других тестах.
     bootstrap-servers: localhost:9092
+
 eureka:
   client:
+    # Eureka отключена: в тестах нет реального Eureka Server.
     enabled: false
+
+# Отключаем Cloud Discovery отдельным ключом (для совместимости с разными версиями Spring Cloud).
 spring.cloud.discovery.enabled: false
+
 jwt:
+  # Тестовый секрет для JWT верификации.
+  # НЕ совпадает с продакшн секретом — это нормально для тестов.
+  # JwtUtils создаёт SecretKey из этой строки: Keys.hmacShaKeyFor("testSecret...".getBytes())
+  # Длина >= 32 символа (256 бит) — минимум для HMAC-SHA256.
   secret: testSecretKeyForTestingPurposesOnly1234567890123456

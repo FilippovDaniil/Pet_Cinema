@@ -46,27 +46,39 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+// @WebMvcTest(MovieController.class) — поднимает только Web-слой (не всё приложение):
+//   - MovieController (указан явно)
+//   - MockMvc (HTTP клиент для тестов без реального сервера)
+//   - ObjectMapper (Jackson для сериализации JSON)
+//   - НЕ запускает: базу данных, Kafka, Redis, DataLoader
+//
+// @Import(SecurityConfig.class) — ОБЯЗАТЕЛЬНО: без этого SecurityConfig не загружается
+//   (WebMvcTest не сканирует @Configuration классы). JwtAuthFilter тоже подхватывается через SecurityConfig.
+//   Это позволяет тестировать реальные правила авторизации (@PreAuthorize и т.д.).
 @WebMvcTest(MovieController.class)
 @Import(SecurityConfig.class)
 @DisplayName("MovieController Web Layer Tests")
 class MovieControllerTest {
 
     @Autowired
-    private MockMvc mockMvc;
+    private MockMvc mockMvc; // Выполняет HTTP запросы в тестовом контексте (без сетевого стека)
 
     @Autowired
-    private ObjectMapper objectMapper;
+    private ObjectMapper objectMapper; // Для сериализации объектов в JSON-тело запроса
 
     @MockBean
-    private MovieService movieService;
+    private MovieService movieService; // Мок сервиса — контроллер вызывает его, мы контролируем ответы
 
-    // Required by SecurityConfig even though filter is excluded
+    // JwtUtils мокируется хотя напрямую не используется в тестах.
+    // JwtAuthFilter (загружается через SecurityConfig) автовайрит JwtUtils — без мока Spring не сможет
+    // создать JwtAuthFilter и весь контекст упадёт с NoSuchBeanDefinitionException.
     @MockBean
     private JwtUtils jwtUtils;
 
-    private PageResponse<MovieDto> samplePage;
+    private PageResponse<MovieDto> samplePage; // Тестовые данные, переиспользуемые в нескольких тестах
     private MovieDto sampleMovie;
 
+    // @BeforeEach: выполняется перед каждым тестом — инициализируем тестовые данные
     @BeforeEach
     void setUp() {
         sampleMovie = MovieDto.builder()
@@ -163,7 +175,7 @@ class MovieControllerTest {
 
     @Test
     @DisplayName("POST /api/movies as ADMIN → 201 Created")
-    @WithMockUser(roles = "ADMIN")
+    @WithMockUser(roles = "ADMIN") // Создаёт пользователя с ролью ROLE_ADMIN в SecurityContext
     void createMovie_asAdmin_returns201() throws Exception {
         MovieCreateRequest req = MovieCreateRequest.builder()
                 .title("New Movie")
@@ -174,21 +186,23 @@ class MovieControllerTest {
                 .genreIds(List.of(1L))
                 .build();
 
-        // ADMIN principal: the controller casts authentication.getPrincipal() to Long
-        // We supply a custom authentication with Long principal
+        // Проблема @WithMockUser: principal = String "user", а контроллер делает (Long) authentication.getPrincipal().
+        // Решение: используем authentication() с явным Long principal.
+        // @WithMockUser остаётся для документации намерения, но authentication() переопределяет SecurityContext.
         UsernamePasswordAuthenticationToken adminAuth = new UsernamePasswordAuthenticationToken(
                 1L, null, List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+        // 1L — Long principal (userId из JWT в реальном приложении)
 
         when(movieService.createMovie(any(MovieCreateRequest.class), eq(1L)))
                 .thenReturn(sampleMovie);
 
         mockMvc.perform(post("/api/movies")
-                        .with(authentication(adminAuth))
-                        .with(csrf())
+                        .with(authentication(adminAuth)) // Подменяем SecurityContext нашим adminAuth
+                        .with(csrf())                    // csrf() добавляет CSRF-токен (нужен для POST с SecurityConfig)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.title").value("Interstellar"));
+                .andExpect(jsonPath("$.title").value("Interstellar")); // Сервис вернул sampleMovie
     }
 
     @Test
@@ -306,16 +320,17 @@ class MovieControllerTest {
         ReviewDto reviewDto = ReviewDto.builder()
                 .id(1L)
                 .movieId(1L)
-                .userId(2L)
+                .userId(2L) // userId = 2L (из нашего clientAuth principal)
                 .rating(5)
                 .comment("Amazing!")
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        // CLIENT principal with Long as principal (matching controller cast)
+        // CLIENT с userId=2L в principal — контроллер передаст 2L в movieService.addReview()
         UsernamePasswordAuthenticationToken clientAuth = new UsernamePasswordAuthenticationToken(
                 2L, null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT")));
 
+        // eq(2L): убеждаемся что сервис вызван именно с userId=2L (из токена, не из тела запроса)
         when(movieService.addReview(eq(1L), any(ReviewCreateRequest.class), eq(2L)))
                 .thenReturn(reviewDto);
 
@@ -324,7 +339,7 @@ class MovieControllerTest {
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isCreated())
+                .andExpect(status().isCreated())       // HTTP 201
                 .andExpect(jsonPath("$.rating").value(5))
                 .andExpect(jsonPath("$.comment").value("Amazing!"));
     }

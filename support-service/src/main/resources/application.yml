@@ -1,31 +1,63 @@
 server:
-  port: 8085
+  port: 8085  # порт support-service. api-gateway маршрутизирует /api/support/** сюда.
+
 spring:
   application:
-    name: support-service
+    name: support-service  # имя для регистрации в Eureka и для lb://support-service
+
   datasource:
+    # jdbc:postgresql://host:port/dbname — подключение к PostgreSQL.
+    # ${DB_HOST:localhost} — переменная окружения DB_HOST, дефолт localhost (для локального запуска).
+    # ${DB_PORT:5432}      — переменная DB_PORT, дефолт стандартный порт PostgreSQL.
+    # support_db           — отдельная БД для support-service (микросервисная изоляция данных).
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/support_db
-    username: ${DB_USER:cinema}
-    password: ${DB_PASS:cinema}
+    username: ${DB_USER:cinema}   # пользователь PostgreSQL (из docker-compose: POSTGRES_USER=cinema)
+    password: ${DB_PASS:cinema}   # пароль (из docker-compose: POSTGRES_PASSWORD=cinema)
+
   jpa:
     hibernate:
+      # ddl-auto: update — Hibernate автоматически создаёт/обновляет таблицы по сущностям.
+      # При первом запуске создаёт support_tickets, support_messages.
+      # При изменении сущностей — добавляет колонки (но не удаляет!).
+      # В продакшн лучше использовать validate или none с Flyway/Liquibase миграциями.
       ddl-auto: update
     properties:
       hibernate:
+        # Явно задаём диалект PostgreSQL — Hibernate использует правильный SQL синтаксис.
+        # Без этого Hibernate пытается определить диалект автоматически (иногда ошибается).
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
   kafka:
+    # Адрес Kafka брокера.
+    # ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092} — в Docker: KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
+      # StringSerializer — ключ сообщения сериализуется как строка (ticketId.toString()).
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # JsonSerializer — значение (SupportMessageEvent) сериализуется в JSON через Jackson.
+      # Spring Kafka JsonSerializer использует ObjectMapper для конвертации объекта → JSON строка.
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
 eureka:
   client:
     service-url:
+      # defaultZone — URL Eureka Server для регистрации и получения реестра сервисов.
+      # В Docker: EUREKA_HOST=service-discovery, EUREKA_PORT=8761
       defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/
   instance:
+    # prefer-ip-address: true — регистрировать сервис по IP, не по hostname.
+    # Важно в Docker: контейнеры общаются по IP, hostname может не резолвиться.
     prefer-ip-address: true
+
 jwt:
+  # Секретный ключ для верификации JWT токенов.
+  # Должен совпадать с ключом в auth-service (все сервисы используют один секрет).
+  # ${JWT_SECRET:...} — берётся из переменной среды, дефолт — тестовый ключ.
   secret: ${JWT_SECRET:mySecretKey12345678901234567890123456789012345678901234567890}
+
 logging:
   pattern:
+    # JSON формат логов для совместимости с Loki + Grafana.
+    # promtail собирает stdout → Loki хранит → Grafana отображает.
+    # Поля: timestamp, level, service (имя сервиса для фильтрации), message.
     console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss}","level":"%level","service":"support-service","message":"%msg"}%n'

@@ -57,9 +57,13 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+// Юнит-тесты OrderService. Нет Spring Context, нет БД, нет Kafka — только Mockito.
+// @ExtendWith(MockitoExtension.class) — JUnit 5 расширение Mockito:
+//   инициализирует @Mock, @InjectMocks, @Captor поля перед каждым тестом.
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
 
+    // @Mock — все зависимости OrderService замокированы
     @Mock
     private OrderRepository orderRepository;
 
@@ -69,30 +73,37 @@ class OrderServiceTest {
     @Mock
     private TicketRepository ticketRepository;
 
+    // KafkaTemplate замокирован — не нужен реальный Kafka broker в юнит-тестах
     @Mock
     private KafkaTemplate<String, Object> kafkaTemplate;
 
+    // @LoadBalanced RestTemplate замокирован — не нужен реальный hall-service
     @Mock
     private RestTemplate restTemplate;
 
+    // InternalPaymentService замокирован — не запускаем @Async поток в юнит-тестах
     @Mock
     private InternalPaymentService internalPaymentService;
 
+    // ObjectMapper мокирован — сериализация JSON не тестируется в юнит-тестах
     @Mock
     private ObjectMapper objectMapper;
 
+    // @InjectMocks — Mockito создаёт OrderService и инжектирует все @Mock поля
     @InjectMocks
     private OrderService orderService;
 
+    // @Captor — позволяет захватить аргументы переданные в мок-методы для последующей проверки
     @Captor
-    private ArgumentCaptor<Order> orderCaptor;
+    private ArgumentCaptor<Order> orderCaptor;  // для verify(orderRepository).save(orderCaptor.capture())
 
     @Captor
-    private ArgumentCaptor<Ticket> ticketCaptor;
+    private ArgumentCaptor<Ticket> ticketCaptor; // для verify(ticketRepository).save(ticketCaptor.capture())
 
     @Captor
-    private ArgumentCaptor<String> topicCaptor;
+    private ArgumentCaptor<String> topicCaptor; // для verify(kafkaTemplate).send(topicCaptor.capture(), ...)
 
+    // Вспомогательный метод — создаёт тестовый SessionDto (имитирует ответ hall-service)
     private SessionDto buildSession(Long id, Long hallId, double basePrice) {
         return SessionDto.builder()
                 .id(id)
@@ -105,6 +116,7 @@ class OrderServiceTest {
                 .build();
     }
 
+    // Вспомогательный метод — создаёт Order с id (имитирует сохранённый в БД заказ)
     private Order buildSavedOrder(Long id, Long userId, OrderStatus status, BigDecimal totalPrice,
                                    OrderType type, List<OrderItem> items) {
         Order order = Order.builder()
@@ -119,14 +131,14 @@ class OrderServiceTest {
         return order;
     }
 
-    // ----------------------------------------------------------------
+    // ================================================================
     // createTicketOrder tests
-    // ----------------------------------------------------------------
+    // ================================================================
 
     @Test
     @DisplayName("createTicketOrder: no extra services → status=PENDING, price=basePrice, kafka payment-request published")
     void createTicketOrder_noExtras_success() {
-        // Arrange
+        // Arrange: мокируем вызов hall-service (RestTemplate.getForObject)
         SessionDto session = buildSession(1L, 10L, 300.0);
         when(restTemplate.getForObject(anyString(), eq(SessionDto.class))).thenReturn(session);
 
@@ -134,9 +146,10 @@ class OrderServiceTest {
                 .sessionId(1L)
                 .seatRow(5)
                 .seatNumber(3)
-                .extraServiceIds(new ArrayList<>())
+                .extraServiceIds(new ArrayList<>()) // нет доп.услуг
                 .build();
 
+        // Мок сохранения — возвращает заказ с id=100
         Order savedOrder = buildSavedOrder(100L, 42L, OrderStatus.PENDING,
                 new BigDecimal("300.0"), OrderType.TICKET, List.of());
         when(orderRepository.save(any(Order.class))).thenReturn(savedOrder);
@@ -144,16 +157,18 @@ class OrderServiceTest {
         // Act
         OrderDto result = orderService.createTicketOrder(req, 42L);
 
-        // Assert
+        // Assert: проверяем что в save() передан корректный Order
         verify(orderRepository).save(orderCaptor.capture());
         Order capturedOrder = orderCaptor.getValue();
         assertThat(capturedOrder.getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(capturedOrder.getTotalPrice()).isEqualByComparingTo(new BigDecimal("300.0"));
         assertThat(capturedOrder.getUserId()).isEqualTo(42L);
 
+        // Проверяем что Kafka получил событие в топик "payment-request"
         verify(kafkaTemplate).send(topicCaptor.capture(), anyString(), any());
         assertThat(topicCaptor.getValue()).isEqualTo("payment-request");
 
+        // Проверяем что симуляция оплаты запущена с правильным orderId
         verify(internalPaymentService).simulatePayment(100L);
 
         assertThat(result).isNotNull();
@@ -170,6 +185,8 @@ class OrderServiceTest {
         ExtraServiceDto extra1 = ExtraServiceDto.builder().id(1L).hallId(10L).name("3D Glasses").price(new BigDecimal("50")).build();
         ExtraServiceDto extra2 = ExtraServiceDto.builder().id(2L).hallId(10L).name("VIP Seat").price(new BigDecimal("100")).build();
 
+        // Мок вызова для доп.услуг (restTemplate.exchange — возвращает List<ExtraServiceDto>)
+        // @SuppressWarnings — подавляем предупреждение об unchecked cast (неизбежно с generic ResponseEntity)
         @SuppressWarnings("unchecked")
         ResponseEntity<List<ExtraServiceDto>> responseEntity = (ResponseEntity<List<ExtraServiceDto>>)
                 (ResponseEntity<?>) ResponseEntity.ok(List.of(extra1, extra2));
@@ -184,7 +201,7 @@ class OrderServiceTest {
                 .sessionId(1L)
                 .seatRow(3)
                 .seatNumber(7)
-                .extraServiceIds(List.of(1L, 2L))
+                .extraServiceIds(List.of(1L, 2L)) // выбраны оба extra
                 .build();
 
         Order savedOrder = buildSavedOrder(101L, 55L, OrderStatus.PENDING,
@@ -194,10 +211,9 @@ class OrderServiceTest {
         // Act
         OrderDto result = orderService.createTicketOrder(req, 55L);
 
-        // Assert
+        // Assert: цена = 200 (base) + 50 (extra1) + 100 (extra2) = 350
         verify(orderRepository).save(orderCaptor.capture());
         Order capturedOrder = orderCaptor.getValue();
-        // basePrice(200) + extra1(50) + extra2(100) = 350
         assertThat(capturedOrder.getTotalPrice()).isEqualByComparingTo(new BigDecimal("350"));
 
         assertThat(result).isNotNull();
@@ -206,7 +222,7 @@ class OrderServiceTest {
     @Test
     @DisplayName("createTicketOrder: hall-service unavailable → ResourceNotFoundException")
     void createTicketOrder_hallServiceUnavailable() {
-        // Arrange
+        // Arrange: hall-service недоступен — RestTemplate бросает исключение
         when(restTemplate.getForObject(anyString(), eq(SessionDto.class)))
                 .thenThrow(new RestClientException("Connection refused"));
 
@@ -217,18 +233,19 @@ class OrderServiceTest {
                 .extraServiceIds(new ArrayList<>())
                 .build();
 
-        // Act & Assert
+        // Act & Assert: должно выброситься ResourceNotFoundException с упоминанием sessionId=99
         assertThatThrownBy(() -> orderService.createTicketOrder(req, 1L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("99");
 
+        // Ни заказ, ни Kafka событие не должны быть созданы
         verify(orderRepository, never()).save(any());
         verify(kafkaTemplate, never()).send(anyString(), anyString(), any());
     }
 
-    // ----------------------------------------------------------------
+    // ================================================================
     // createTicketOrderBySeller tests
-    // ----------------------------------------------------------------
+    // ================================================================
 
     @Test
     @DisplayName("createTicketOrderBySeller: status=PAID immediately, ticket created, kafka ticket-purchase published")
@@ -245,6 +262,7 @@ class OrderServiceTest {
                 .extraServiceIds(new ArrayList<>())
                 .build();
 
+        // OrderItem для сохранённого заказа (нужен чтобы createTicketFromOrder отработал)
         OrderItem ticketItem = OrderItem.builder()
                 .id(1L)
                 .itemType(ItemType.TICKET)
@@ -258,37 +276,34 @@ class OrderServiceTest {
         Order savedOrder = buildSavedOrder(200L, 10L, OrderStatus.PAID,
                 new BigDecimal("500.0"), OrderType.TICKET, List.of(ticketItem));
         savedOrder.setSellerId(77L);
-        ticketItem.setOrder(savedOrder);
+        ticketItem.setOrder(savedOrder); // связываем item с order (для toItemDto)
 
         when(orderRepository.save(any(Order.class))).thenReturn(savedOrder);
 
         Ticket savedTicket = Ticket.builder()
-                .id(1L)
-                .orderId(200L)
-                .sessionId(2L)
-                .userId(10L)
-                .seatRow(1)
-                .seatNumber(1)
-                .status(TicketStatus.ACTIVE)
-                .qrCode("ABCDEF123456")
+                .id(1L).orderId(200L).sessionId(2L).userId(10L)
+                .seatRow(1).seatNumber(1).status(TicketStatus.ACTIVE).qrCode("ABCDEF123456")
                 .build();
         when(ticketRepository.save(any(Ticket.class))).thenReturn(savedTicket);
 
         // Act
         OrderDto result = orderService.createTicketOrderBySeller(req, 77L);
 
-        // Assert
+        // Assert: заказ создан сразу PAID (кассир принял деньги)
         verify(orderRepository).save(orderCaptor.capture());
         Order capturedOrder = orderCaptor.getValue();
         assertThat(capturedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
         assertThat(capturedOrder.getSellerId()).isEqualTo(77L);
         assertThat(capturedOrder.getUserId()).isEqualTo(10L);
 
+        // Ticket создан сразу (не ждём webhook)
         verify(ticketRepository).save(any(Ticket.class));
 
+        // Kafka: топик "ticket-purchase" (не "payment-request" — нет ожидания оплаты)
         verify(kafkaTemplate).send(topicCaptor.capture(), anyString(), any());
         assertThat(topicCaptor.getValue()).isEqualTo("ticket-purchase");
 
+        // InternalPaymentService НЕ должен быть вызван (нет async симуляции для seller flow)
         verify(internalPaymentService, never()).simulatePayment(anyLong());
 
         assertThat(result).isNotNull();
@@ -306,8 +321,7 @@ class OrderServiceTest {
         SellerTicketOrderRequest req = SellerTicketOrderRequest.builder()
                 .clientId(10L)
                 .sessionId(999L)
-                .seatRow(1)
-                .seatNumber(1)
+                .seatRow(1).seatNumber(1)
                 .extraServiceIds(new ArrayList<>())
                 .build();
 
@@ -316,29 +330,24 @@ class OrderServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("999");
 
+        // Ни заказ, ни билет не сохранились
         verify(orderRepository, never()).save(any());
         verify(ticketRepository, never()).save(any());
     }
 
-    // ----------------------------------------------------------------
+    // ================================================================
     // createFoodOrder tests
-    // ----------------------------------------------------------------
+    // ================================================================
 
     @Test
     @DisplayName("createFoodOrder: 2 items → totalPrice = sum of (price * qty), status=PAID, type=FOOD")
     void createFoodOrder_success() {
-        // Arrange
+        // Arrange: два товара в меню
         FoodItem foodItem1 = FoodItem.builder()
-                .id(1L)
-                .name("Popcorn")
-                .price(new BigDecimal("250"))
-                .category(FoodCategory.POPCORN)
+                .id(1L).name("Popcorn").price(new BigDecimal("250")).category(FoodCategory.POPCORN)
                 .build();
         FoodItem foodItem2 = FoodItem.builder()
-                .id(2L)
-                .name("Cola")
-                .price(new BigDecimal("150"))
-                .category(FoodCategory.DRINK)
+                .id(2L).name("Cola").price(new BigDecimal("150")).category(FoodCategory.DRINK)
                 .build();
 
         when(foodItemRepository.findById(1L)).thenReturn(Optional.of(foodItem1));
@@ -352,7 +361,7 @@ class OrderServiceTest {
                 ))
                 .build();
 
-        // totalPrice = 250*2 + 150*1 = 650
+        // Мок сохранения с ожидаемыми OrderItem
         OrderItem oi1 = OrderItem.builder()
                 .id(10L).itemType(ItemType.FOOD).foodItemId(1L).quantity(2)
                 .price(new BigDecimal("500")).build();
@@ -368,7 +377,7 @@ class OrderServiceTest {
         // Act
         OrderDto result = orderService.createFoodOrder(req, 88L);
 
-        // Assert
+        // Assert: цена = 250*2 + 150*1 = 650
         verify(orderRepository).save(orderCaptor.capture());
         Order capturedOrder = orderCaptor.getValue();
         assertThat(capturedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
@@ -386,7 +395,7 @@ class OrderServiceTest {
     @Test
     @DisplayName("createFoodOrder: food item not found → ResourceNotFoundException")
     void createFoodOrder_foodItemNotFound() {
-        // Arrange
+        // Arrange: товара с id=999 нет в БД
         when(foodItemRepository.findById(999L)).thenReturn(Optional.empty());
 
         FoodOrderRequest req = FoodOrderRequest.builder()
@@ -396,31 +405,27 @@ class OrderServiceTest {
                 ))
                 .build();
 
-        // Act & Assert
+        // Act & Assert: ResourceNotFoundException с упоминанием несуществующего id
         assertThatThrownBy(() -> orderService.createFoodOrder(req, 88L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("999");
 
+        // Заказ не сохранился (транзакция откатится)
         verify(orderRepository, never()).save(any());
     }
 
-    // ----------------------------------------------------------------
+    // ================================================================
     // handlePaymentWebhook tests
-    // ----------------------------------------------------------------
+    // ================================================================
 
     @Test
     @DisplayName("handlePaymentWebhook: SUCCESS → order=PAID, ticket created, kafka ticket-purchase published")
     void handlePaymentWebhook_success() {
-        // Arrange
+        // Arrange: заказ в статусе PENDING с позицией-билетом
         OrderItem ticketItem = OrderItem.builder()
-                .id(5L)
-                .itemType(ItemType.TICKET)
-                .ticketSessionId(1L)
-                .ticketSeatRow(3)
-                .ticketSeatNumber(7)
-                .quantity(1)
-                .price(new BigDecimal("300.00"))
-                .build();
+                .id(5L).itemType(ItemType.TICKET).ticketSessionId(1L)
+                .ticketSeatRow(3).ticketSeatNumber(7).quantity(1)
+                .price(new BigDecimal("300.00")).build();
 
         Order order = buildSavedOrder(400L, 50L, OrderStatus.PENDING,
                 new BigDecimal("300.00"), OrderType.TICKET, List.of(ticketItem));
@@ -435,23 +440,23 @@ class OrderServiceTest {
         when(ticketRepository.save(any(Ticket.class))).thenReturn(savedTicket);
 
         PaymentWebhookRequest req = PaymentWebhookRequest.builder()
-                .orderId(400L)
-                .status("SUCCESS")
-                .transactionId("txn-abc-001")
-                .build();
+                .orderId(400L).status("SUCCESS").transactionId("txn-abc-001").build();
 
         // Act
         orderService.handlePaymentWebhook(req);
 
-        // Assert
+        // Assert: статус изменился на PAID (прямая мутация объекта order)
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(orderRepository, times(1)).save(order);
+
+        // Билет создан с корректными полями
         verify(ticketRepository).save(ticketCaptor.capture());
         Ticket capturedTicket = ticketCaptor.getValue();
         assertThat(capturedTicket.getOrderId()).isEqualTo(400L);
         assertThat(capturedTicket.getSessionId()).isEqualTo(1L);
         assertThat(capturedTicket.getStatus()).isEqualTo(TicketStatus.ACTIVE);
 
+        // Kafka уведомление о покупке отправлено
         verify(kafkaTemplate).send(topicCaptor.capture(), anyString(), any());
         assertThat(topicCaptor.getValue()).isEqualTo("ticket-purchase");
     }
@@ -473,17 +478,16 @@ class OrderServiceTest {
         when(orderRepository.save(any(Order.class))).thenReturn(order);
 
         PaymentWebhookRequest req = PaymentWebhookRequest.builder()
-                .orderId(401L)
-                .status("FAILED")
-                .transactionId("txn-fail-001")
-                .build();
+                .orderId(401L).status("FAILED").transactionId("txn-fail-001").build();
 
         // Act
         orderService.handlePaymentWebhook(req);
 
-        // Assert
+        // Assert: заказ отменён
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         verify(orderRepository).save(order);
+
+        // Билет и Kafka событие не созданы
         verify(ticketRepository, never()).save(any());
         verify(kafkaTemplate, never()).send(anyString(), anyString(), any());
     }
@@ -491,14 +495,11 @@ class OrderServiceTest {
     @Test
     @DisplayName("handlePaymentWebhook: order not found → ResourceNotFoundException")
     void handlePaymentWebhook_orderNotFound() {
-        // Arrange
+        // Arrange: заказа с id=9999 нет в БД
         when(orderRepository.findById(9999L)).thenReturn(Optional.empty());
 
         PaymentWebhookRequest req = PaymentWebhookRequest.builder()
-                .orderId(9999L)
-                .status("SUCCESS")
-                .transactionId("txn-xyz")
-                .build();
+                .orderId(9999L).status("SUCCESS").transactionId("txn-xyz").build();
 
         // Act & Assert
         assertThatThrownBy(() -> orderService.handlePaymentWebhook(req))
@@ -512,7 +513,7 @@ class OrderServiceTest {
     @Test
     @DisplayName("handlePaymentWebhook: lowercase 'success' status is treated as SUCCESS")
     void handlePaymentWebhook_caseInsensitive() {
-        // Arrange
+        // Arrange: payment-simulator может прислать статус в нижнем регистре
         OrderItem ticketItem = OrderItem.builder()
                 .id(7L).itemType(ItemType.TICKET).ticketSessionId(2L)
                 .ticketSeatRow(2).ticketSeatNumber(4).quantity(1)
@@ -530,29 +531,27 @@ class OrderServiceTest {
                 .seatRow(2).seatNumber(4).status(TicketStatus.ACTIVE).qrCode("QRLOWER").build();
         when(ticketRepository.save(any(Ticket.class))).thenReturn(savedTicket);
 
+        // "success" в нижнем регистре — equalsIgnoreCase должно отработать
         PaymentWebhookRequest req = PaymentWebhookRequest.builder()
-                .orderId(402L)
-                .status("success")
-                .transactionId("txn-lower")
-                .build();
+                .orderId(402L).status("success").transactionId("txn-lower").build();
 
         // Act
         orderService.handlePaymentWebhook(req);
 
-        // Assert: treated as SUCCESS
+        // Assert: несмотря на lowercase статус, заказ оплачен и билет создан
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
         verify(ticketRepository).save(any(Ticket.class));
         verify(kafkaTemplate).send(eq("ticket-purchase"), anyString(), any());
     }
 
-    // ----------------------------------------------------------------
+    // ================================================================
     // getMyOrders / getOrderById tests
-    // ----------------------------------------------------------------
+    // ================================================================
 
     @Test
     @DisplayName("getMyOrders: returns list of DTOs for the user")
     void getMyOrders_returnsUserOrders() {
-        // Arrange
+        // Arrange: два заказа пользователя
         Order order1 = buildSavedOrder(1L, 42L, OrderStatus.PAID, new BigDecimal("300.00"), OrderType.TICKET, List.of());
         Order order2 = buildSavedOrder(2L, 42L, OrderStatus.PENDING, new BigDecimal("150.00"), OrderType.FOOD, List.of());
         when(orderRepository.findByUserId(42L)).thenReturn(List.of(order1, order2));
@@ -569,14 +568,14 @@ class OrderServiceTest {
     @Test
     @DisplayName("getOrderById: owner can access their own order")
     void getOrderById_owner_canAccess() {
-        // Arrange
+        // Arrange: userId совпадает с order.userId (владелец)
         Order order = buildSavedOrder(10L, 42L, OrderStatus.PAID, new BigDecimal("300.00"), OrderType.TICKET, List.of());
         when(orderRepository.findById(10L)).thenReturn(Optional.of(order));
 
         // Act
         OrderDto result = orderService.getOrderById(10L, 42L, "CLIENT");
 
-        // Assert
+        // Assert: доступ разрешён
         assertThat(result).isNotNull();
         assertThat(result.getId()).isEqualTo(10L);
         assertThat(result.getUserId()).isEqualTo(42L);
@@ -585,14 +584,14 @@ class OrderServiceTest {
     @Test
     @DisplayName("getOrderById: SELLER role can access any order")
     void getOrderById_seller_canAccess() {
-        // Arrange
+        // Arrange: userId != order.userId, но роль SELLER
         Order order = buildSavedOrder(11L, 100L, OrderStatus.PAID, new BigDecimal("300.00"), OrderType.TICKET, List.of());
         when(orderRepository.findById(11L)).thenReturn(Optional.of(order));
 
-        // Act — different userId but SELLER role
+        // Act: другой userId (999 != 100), но SELLER роль
         OrderDto result = orderService.getOrderById(11L, 999L, "SELLER");
 
-        // Assert
+        // Assert: SELLER может смотреть любые заказы
         assertThat(result).isNotNull();
         assertThat(result.getId()).isEqualTo(11L);
     }
@@ -607,7 +606,7 @@ class OrderServiceTest {
         // Act
         OrderDto result = orderService.getOrderById(12L, 888L, "ADMIN");
 
-        // Assert
+        // Assert: ADMIN может смотреть любые заказы
         assertThat(result).isNotNull();
         assertThat(result.getId()).isEqualTo(12L);
     }
@@ -615,11 +614,11 @@ class OrderServiceTest {
     @Test
     @DisplayName("getOrderById: stranger with CLIENT role → AccessDeniedException")
     void getOrderById_stranger_throwsAccessDenied() {
-        // Arrange
+        // Arrange: userId=777 — чужой заказ (владелец userId=100), роль CLIENT
         Order order = buildSavedOrder(13L, 100L, OrderStatus.PAID, new BigDecimal("300.00"), OrderType.TICKET, List.of());
         when(orderRepository.findById(13L)).thenReturn(Optional.of(order));
 
-        // Act & Assert — userId=777 is not the owner and has CLIENT role
+        // Act & Assert: AccessDeniedException (не ResourceNotFoundException)
         assertThatThrownBy(() -> orderService.getOrderById(13L, 777L, "CLIENT"))
                 .isInstanceOf(AccessDeniedException.class);
     }
@@ -627,7 +626,7 @@ class OrderServiceTest {
     @Test
     @DisplayName("getOrderById: order not found → ResourceNotFoundException")
     void getOrderById_notFound() {
-        // Arrange
+        // Arrange: заказа не существует
         when(orderRepository.findById(anyLong())).thenReturn(Optional.empty());
 
         // Act & Assert
@@ -636,9 +635,9 @@ class OrderServiceTest {
                 .hasMessageContaining("9999");
     }
 
-    // ----------------------------------------------------------------
-    // Kafka topic name verification
-    // ----------------------------------------------------------------
+    // ================================================================
+    // Kafka topic name verification tests
+    // ================================================================
 
     @Test
     @DisplayName("Kafka: createTicketOrder publishes to 'payment-request' topic")
@@ -648,9 +647,7 @@ class OrderServiceTest {
         when(restTemplate.getForObject(anyString(), eq(SessionDto.class))).thenReturn(session);
 
         TicketOrderRequest req = TicketOrderRequest.builder()
-                .sessionId(1L).seatRow(1).seatNumber(1)
-                .extraServiceIds(new ArrayList<>())
-                .build();
+                .sessionId(1L).seatRow(1).seatNumber(1).extraServiceIds(new ArrayList<>()).build();
 
         Order savedOrder = buildSavedOrder(500L, 1L, OrderStatus.PENDING,
                 new BigDecimal("300.0"), OrderType.TICKET, List.of());
@@ -659,7 +656,7 @@ class OrderServiceTest {
         // Act
         orderService.createTicketOrder(req, 1L);
 
-        // Assert
+        // Assert: именно "payment-request", не "ticket-purchase"
         verify(kafkaTemplate).send(topicCaptor.capture(), anyString(), any());
         assertThat(topicCaptor.getValue()).isEqualTo("payment-request");
     }
@@ -672,14 +669,12 @@ class OrderServiceTest {
         when(restTemplate.getForObject(anyString(), eq(SessionDto.class))).thenReturn(session);
 
         SellerTicketOrderRequest req = SellerTicketOrderRequest.builder()
-                .clientId(1L).sessionId(1L).seatRow(1).seatNumber(1)
-                .extraServiceIds(new ArrayList<>())
+                .clientId(1L).sessionId(1L).seatRow(1).seatNumber(1).extraServiceIds(new ArrayList<>())
                 .build();
 
         OrderItem ticketItem = OrderItem.builder()
                 .id(20L).itemType(ItemType.TICKET).ticketSessionId(1L)
-                .ticketSeatRow(1).ticketSeatNumber(1).quantity(1)
-                .price(new BigDecimal("300.0")).build();
+                .ticketSeatRow(1).ticketSeatNumber(1).quantity(1).price(new BigDecimal("300.0")).build();
 
         Order savedOrder = buildSavedOrder(501L, 1L, OrderStatus.PAID,
                 new BigDecimal("300.0"), OrderType.TICKET, List.of(ticketItem));
@@ -696,7 +691,7 @@ class OrderServiceTest {
         // Act
         orderService.createTicketOrderBySeller(req, 77L);
 
-        // Assert
+        // Assert: именно "ticket-purchase" (SELLER поток пропускает payment-request)
         verify(kafkaTemplate).send(topicCaptor.capture(), anyString(), any());
         assertThat(topicCaptor.getValue()).isEqualTo("ticket-purchase");
     }
@@ -707,8 +702,7 @@ class OrderServiceTest {
         // Arrange
         OrderItem ticketItem = OrderItem.builder()
                 .id(30L).itemType(ItemType.TICKET).ticketSessionId(3L)
-                .ticketSeatRow(5).ticketSeatNumber(10).quantity(1)
-                .price(new BigDecimal("250.00")).build();
+                .ticketSeatRow(5).ticketSeatNumber(10).quantity(1).price(new BigDecimal("250.00")).build();
 
         Order order = buildSavedOrder(600L, 70L, OrderStatus.PENDING,
                 new BigDecimal("250.00"), OrderType.TICKET, List.of(ticketItem));
@@ -728,7 +722,7 @@ class OrderServiceTest {
         // Act
         orderService.handlePaymentWebhook(req);
 
-        // Assert
+        // Assert: правильный топик после успешной оплаты
         verify(kafkaTemplate).send(topicCaptor.capture(), anyString(), any());
         assertThat(topicCaptor.getValue()).isEqualTo("ticket-purchase");
     }

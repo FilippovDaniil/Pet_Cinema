@@ -1,23 +1,75 @@
 server:
+  # port: 8087 — HTTP порт payment-simulator.
+  # В Docker Compose другие сервисы не вызывают payment-simulator напрямую —
+  # он сам инициирует вызовы (Kafka consumer → POST на order-service).
+  # Порт 8087 нужен для Eureka регистрации и /actuator/health healthcheck.
   port: 8087
+
 spring:
   application:
+    # name: payment-simulator — имя сервиса в Eureka Service Registry.
+    # По этому имени Eureka отображает сервис в дашборде (http://localhost:8761).
+    # В данном проекте никто не вызывает payment-simulator через lb://payment-simulator —
+    # он только сам вызывает other сервисы.
     name: payment-simulator
+
   kafka:
+    # bootstrap-servers — адрес Kafka брокера.
+    # ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092} — env var с fallback:
+    #   - В Docker: KAFKA_BOOTSTRAP_SERVERS=kafka:29092 (внутренний порт контейнера)
+    #   - Локально: localhost:9092 (стандартный порт Kafka)
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
     consumer:
+      # group-id: payment-simulator-group — consumer group для Kafka.
+      # Kafka балансирует партиции топика между consumer-ами одной группы.
+      # У нас один экземпляр → все партиции топика "payment-request" достаются ему.
       group-id: payment-simulator-group
+
+      # auto-offset-reset: earliest — поведение при отсутствии сохранённого offset.
+      # earliest — читать с самого начала топика (не пропускать старые сообщения).
+      # Важно при первом запуске: если order-service уже отправил сообщения до старта
+      # payment-simulator, они будут обработаны при следующем запуске.
       auto-offset-reset: earliest
+
+      # key-deserializer: StringDeserializer — ключ сообщения десериализуется как String.
+      # В order-service KafkaTemplate отправляет: orderId.toString() как ключ.
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+      # value-deserializer: StringDeserializer — значение сообщения десериализуется как String.
+      # Получаем сырую JSON строку в handlePaymentRequest(String message).
+      # Затем вручную парсим через objectMapper.readTree(message).
+      # Альтернатива: JsonDeserializer<PaymentRequestEvent> — но тогда нужен DTO класс.
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
 eureka:
   client:
     service-url:
+      # defaultZone — адрес Eureka Server для регистрации.
+      # ${EUREKA_HOST:localhost} — env var с fallback на localhost.
+      # ${EUREKA_PORT:8761} — стандартный порт Eureka.
+      # В Docker Compose: EUREKA_HOST=service-discovery, EUREKA_PORT=8761
       defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/
+
   instance:
+    # prefer-ip-address: true — регистрируется в Eureka по IP адресу контейнера,
+    # а не по hostname. В Docker сети IP более надёжен чем hostname для маршрутизации.
     prefer-ip-address: true
+
 order:
+  # webhook-url — URL для отправки результата платежа в order-service.
+  # ${ORDER_SERVICE_HOST:order-service} — имя Docker контейнера (Docker DNS резолвит его в IP).
+  # ${ORDER_SERVICE_PORT:8084} — порт order-service.
+  # Итоговый URL в Docker: http://order-service:8084/api/orders/webhook/payment
+  # Итоговый URL локально: http://localhost:8084/api/orders/webhook/payment
+  # Этот URL специально НЕ защищён JWT (whitelist в api-gateway: /api/orders/webhook/**)
   webhook-url: http://${ORDER_SERVICE_HOST:order-service}:${ORDER_SERVICE_PORT:8084}/api/orders/webhook/payment
+
 logging:
   pattern:
+    # console — формат логов в JSON для Promtail/Loki сбора.
+    # Все сервисы используют идентичный JSON формат:
+    #   {"timestamp":"...","level":"INFO","service":"payment-simulator","message":"..."}
+    # "service":"payment-simulator" — метка для фильтрации логов в Grafana по сервису.
+    # Promtail собирает stdout → отправляет в Loki → Grafana отображает.
     console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss}","level":"%level","service":"payment-simulator","message":"%msg"}%n'

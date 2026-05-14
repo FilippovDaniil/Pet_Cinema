@@ -1,33 +1,64 @@
 server:
+  # Порт order-service. 8084 в соответствии со схемой портов проекта.
   port: 8084
+
 spring:
   application:
+    # Имя сервиса в Eureka — другие сервисы вызывают: lb://order-service
     name: order-service
+
   datasource:
+    # ${VAR:default} — если переменная окружения DB_HOST не задана, используется localhost (для локальной разработки)
+    # В Docker эти переменные задаются в docker-compose.yml: DB_HOST=order-db, DB_PORT=5432
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/order_db
     username: ${DB_USER:cinema}
     password: ${DB_PASS:cinema}
+
   jpa:
     hibernate:
+      # update — Hibernate автоматически обновляет схему БД (добавляет новые таблицы/колонки).
+      # НЕ удаляет существующие данные. Подходит для разработки.
+      # В production используйте Flyway/Liquibase для управления миграциями.
       ddl-auto: update
     properties:
       hibernate:
+        # Явный диалект PostgreSQL — без него Hibernate может использовать неоптимальный SQL.
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
   kafka:
+    # Адрес Kafka broker. В Docker: KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
+      # Ключ сообщения — строка (orderId.toString())
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # Значение — JSON (Map<String,Object> или DTO сериализуется Jackson-ом)
+      # JsonSerializer из spring-kafka добавляет __TypeId__ header по умолчанию.
+      # KafkaConfig.ADD_TYPE_INFO_HEADERS=false если нужно убрать (в текущем проекте не настроено).
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
 eureka:
   client:
     service-url:
+      # Eureka Server URL. В Docker: EUREKA_HOST=service-discovery, EUREKA_PORT=8761
       defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/
   instance:
+    # prefer-ip-address: true — Eureka регистрирует сервис по IP (а не hostname).
+    # Важно в Docker: контейнеры имеют случайные hostname, но стабильные IP в сети Docker.
     prefer-ip-address: true
+
 jwt:
+  # Секрет для верификации JWT токенов. Должен совпадать со значением в auth-service.
+  # В Docker передаётся через JWT_SECRET env var. Дефолт — для локальной разработки.
   secret: ${JWT_SECRET:mySecretKey12345678901234567890123456789012345678901234567890}
+
 payment:
+  # URL вебхука оплаты — куда InternalPaymentService отправляет результат симуляции.
+  # "order-service:8084" — Docker DNS имя контейнера (из docker-compose.yml service name).
+  # При локальном запуске без Docker это нужно изменить на localhost:8084.
   webhook-url: http://order-service:8084/api/orders/webhook/payment
+
 logging:
   pattern:
+    # Структурированный JSON формат для сбора логов через promtail → Loki → Grafana.
+    # Каждая строка лога — отдельный JSON объект. "service":"order-service" — метка для фильтрации.
     console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss}","level":"%level","service":"order-service","message":"%msg"}%n'
