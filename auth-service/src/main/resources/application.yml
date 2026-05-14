@@ -1,45 +1,50 @@
 server:
-  port: 8081
+  port: 8081  # Порт auth-service
 
 spring:
   application:
-    name: auth-service
+    name: auth-service  # Имя в Eureka и логах
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/auth_db
-    username: ${DB_USER:cinema}
-    password: ${DB_PASS:cinema}
-    driver-class-name: org.postgresql.Driver
+    # Строка подключения к PostgreSQL. DB_HOST/DB_PORT читаются из env (в Docker = имя контейнера)
+    # auth_db — отдельная БД только для auth-service (микросервисная изоляция)
+    username: ${DB_USER:cinema}   # Пользователь БД (по умолчанию "cinema")
+    password: ${DB_PASS:cinema}   # Пароль БД (по умолчанию "cinema")
+    driver-class-name: org.postgresql.Driver # JDBC драйвер для PostgreSQL
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: false
+      ddl-auto: update  # Hibernate автоматически обновляет схему таблиц при старте
+                        # update = добавляет новые колонки/таблицы, НЕ удаляет существующие
+                        # В проде лучше использовать Flyway/Liquibase
+    show-sql: false     # Не выводить SQL в лог (включить true для отладки)
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect # Диалект SQL для PostgreSQL
+        format_sql: true # Форматировать SQL в логах (многострочно) — удобно при show-sql: true
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
+      host: ${REDIS_HOST:localhost} # В Docker: REDIS_HOST=redis (имя контейнера)
       port: ${REDIS_PORT:6379}
 
 eureka:
   client:
     service-url:
-      defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/
+      defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/  # Адрес Eureka Server
   instance:
-    prefer-ip-address: true
+    prefer-ip-address: true  # Регистрироваться по IP (важно в Docker)
 
 jwt:
   secret: ${JWT_SECRET:mySecretKey12345678901234567890123456789012345678901234567890}
-  access-token-expiration: 900000
-  refresh-token-expiration: 604800000
+  access-token-expiration: 900000     # TTL access-токена: 900 000 мс = 15 минут
+  refresh-token-expiration: 604800000 # TTL refresh-токена: 604 800 000 мс = 7 дней
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info  # Actuator эндпоинты для healthcheck Docker Compose
 
 logging:
   pattern:
     console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss}","level":"%level","service":"auth-service","message":"%msg"}%n'
+    # JSON формат логов для promtail → Loki → Grafana

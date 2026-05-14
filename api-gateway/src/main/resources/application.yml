@@ -1,83 +1,88 @@
 server:
-  port: 8080
+  port: 8080  # Порт API Gateway — единая точка входа для всех клиентов (фронтенд, Postman)
 
 spring:
   application:
-    name: api-gateway
+    name: api-gateway  # Имя сервиса в Eureka и логах
   cloud:
     gateway:
-      routes:
-        - id: auth-service
-          uri: lb://auth-service
+      routes:  # Правила маршрутизации — куда пересылать запросы по какому пути
+        - id: auth-service                   # Уникальный идентификатор маршрута (для логов и отладки)
+          uri: lb://auth-service             # lb:// = load balanced через Eureka (Spring Cloud LoadBalancer)
           predicates:
-            - Path=/api/auth/**
+            - Path=/api/auth/**              # Все запросы на /api/auth/* → auth-service
           filters:
-            - name: JwtAuthenticationFilter
+            - name: JwtAuthenticationFilter  # Применяем наш JWT-фильтр (для /api/auth/login — пустит без токена)
         - id: movie-service
           uri: lb://movie-service
           predicates:
-            - Path=/api/movies/**,/api/genres/**
+            - Path=/api/movies/**,/api/genres/**  # /api/movies/* и /api/genres/* → movie-service
           filters:
             - name: JwtAuthenticationFilter
         - id: hall-service
           uri: lb://hall-service
           predicates:
-            - Path=/api/halls/**,/api/sessions/**
+            - Path=/api/halls/**,/api/sessions/** # Залы и сеансы → hall-service
           filters:
             - name: JwtAuthenticationFilter
         - id: order-service
           uri: lb://order-service
           predicates:
-            - Path=/api/orders/**,/api/food-menu/**
+            - Path=/api/orders/**,/api/food-menu/** # Заказы и меню → order-service
           filters:
             - name: JwtAuthenticationFilter
         - id: support-service
           uri: lb://support-service
           predicates:
-            - Path=/api/support/**
+            - Path=/api/support/**           # Поддержка → support-service
           filters:
             - name: JwtAuthenticationFilter
         - id: notification-service
           uri: lb://notification-service
           predicates:
-            - Path=/api/notifications/**
+            - Path=/api/notifications/**     # Уведомления → notification-service
           filters:
             - name: JwtAuthenticationFilter
       globalcors:
         cors-configurations:
-          '[/**]':
-            allowed-origins: "http://localhost:3000,http://localhost:3001"
-            allowed-methods: "*"
-            allowed-headers: "*"
-            allow-credentials: true
+          '[/**]':                            # CORS для всех путей (нужно для браузера)
+            allowed-origins: "http://localhost:3000,http://localhost:3001"  # Адреса фронтенда в режиме разработки
+            allowed-methods: "*"             # Все HTTP методы (GET, POST, PUT, DELETE, OPTIONS)
+            allowed-headers: "*"             # Все заголовки (в т.ч. Authorization)
+            allow-credentials: true          # Разрешаем передачу куки и заголовка Authorization
+
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
+      host: ${REDIS_HOST:localhost}  # Хост Redis (в Docker: REDIS_HOST=redis, локально: localhost)
+      port: ${REDIS_PORT:6379}       # Порт Redis (стандартный)
+
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}  # Адрес Kafka-брокера
     consumer:
-      group-id: gateway-group
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      group-id: gateway-group        # Группа консьюмеров — все gateway-экземпляры читают из одной группы
+      auto-offset-reset: earliest    # При первом запуске читать с начала топика
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer   # Ключ сообщения → String
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer # Значение → String (JSON-строка)
 
 eureka:
   client:
     service-url:
-      defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/
+      defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/  # Адрес Eureka Server
   instance:
-    prefer-ip-address: true
+    prefer-ip-address: true  # Регистрироваться в Eureka по IP, а не по hostname (важно в Docker-сетях)
 
 jwt:
   secret: ${JWT_SECRET:mySecretKey12345678901234567890123456789012345678901234567890}
+  # Секрет для валидации JWT. В проде ВСЕГДА передавать через env-переменную JWT_SECRET!
+  # Значение по умолчанию — только для локальной разработки
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics  # Открываем эндпоинты Actuator: /actuator/health (healthcheck Docker), /actuator/info, /actuator/metrics
 
 logging:
   pattern:
     console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss}","level":"%level","service":"api-gateway","message":"%msg"}%n'
+    # JSON-формат логов для promtail → Loki → Grafana (структурированное логирование)

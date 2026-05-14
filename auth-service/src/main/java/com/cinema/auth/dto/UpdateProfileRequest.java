@@ -1,9 +1,12 @@
-package com.cinema.auth.dto;
+package com.cinema.auth.dto; // Пакет DTO для auth-service (локальные DTO, не в common-dtos)
 
 import lombok.Data;
 
-@Data
+@Data // Генерирует геттеры, сеттеры, equals, hashCode, toString
 public class UpdateProfileRequest {
-    private String username;
-    private String email;
+    // Тело запроса PATCH /api/auth/me — обновление профиля пользователя.
+    // Все поля опциональны (нет @NotBlank) — обновляем только то, что передано.
+
+    private String username; // Новый логин (null = не менять)
+    private String email;    // Новый email (null = не менять)
 }

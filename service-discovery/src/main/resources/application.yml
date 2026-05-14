@@ -1,17 +1,17 @@
 server:
-  port: 8761
+  port: 8761  # Стандартный порт Eureka Server (де-факто стандарт Netflix)
 
 spring:
   application:
-    name: service-discovery
+    name: service-discovery  # Имя сервиса — отображается в Eureka UI и логах
 
 eureka:
   instance:
-    hostname: localhost
+    hostname: localhost  # Хост Eureka Server (при запуске в Docker заменяется именем контейнера через переменные окружения)
   client:
-    register-with-eureka: false
-    fetch-registry: false
+    register-with-eureka: false  # false = сам Eureka Server НЕ регистрирует себя в реестре (он и есть реестр)
+    fetch-registry: false        # false = не загружает список других сервисов (он сам источник истины)
     service-url:
-      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/  # URL реестра — используется другими сервисами для регистрации
   server:
-    wait-time-in-ms-when-sync-empty: 0
+    wait-time-in-ms-when-sync-empty: 0  # Не ждать синхронизации при пустом реестре (ускоряет старт в dev/docker)

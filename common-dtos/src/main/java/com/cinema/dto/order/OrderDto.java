@@ -1,6 +1,6 @@
-package com.cinema.dto.order;
+package com.cinema.dto.order; // Пакет для DTO сервиса заказов
 
-import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonFormat; // Формат даты в JSON
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,15 +15,16 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class OrderDto {
+    // DTO заказа — возвращается клиенту (история заказов, детали заказа)
 
-    private Long id;
-    private Long userId;
-    private Long sellerId;
-    private String orderType;
-    private String status;
-    private BigDecimal totalPrice;
-    private List<OrderItemDto> items;
+    private Long id;           // Идентификатор заказа
+    private Long userId;       // ID покупателя
+    private Long sellerId;     // ID продавца (null если клиент купил сам через автомат)
+    private String orderType;  // Тип заказа: "TICKET", "FOOD", "MIXED"
+    private String status;     // Статус: "PENDING" (ожидает оплаты), "PAID", "CANCELLED"
+    private BigDecimal totalPrice; // Итоговая сумма заказа
+    private List<OrderItemDto> items; // Список позиций заказа (билеты + еда)
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    private LocalDateTime createdAt;
+    private LocalDateTime createdAt; // Дата и время создания заказа
 }

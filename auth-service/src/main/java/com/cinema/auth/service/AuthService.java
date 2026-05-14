@@ -1,4 +1,4 @@
-package com.cinema.auth.service;
+package com.cinema.auth.service; // Пакет сервисов auth-service
 
 import com.cinema.auth.entity.RefreshToken;
 import com.cinema.auth.entity.Role;
@@ -18,11 +18,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.authentication.BadCredentialsException;          // Исключение при неверном пароле
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken; // Объект для передачи логин+пароль в AuthManager
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Transactional; // @Transactional — операция в рамках одной БД-транзакции
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -33,21 +33,24 @@ import java.util.concurrent.TimeUnit;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+    // Бизнес-логика аутентификации: регистрация, вход, обновление токенов, выход, профиль.
 
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final JwtUtils jwtUtils;
-    private final AuthenticationManager authenticationManager;
-    private final StringRedisTemplate redisTemplate;
+    private final PasswordEncoder passwordEncoder;                // BCryptPasswordEncoder
+    private final JwtUtils jwtUtils;                              // Генерация/валидация JWT
+    private final AuthenticationManager authenticationManager;    // Spring Security: проверяет логин+пароль
+    private final StringRedisTemplate redisTemplate;             // Redis: blacklist токенов
 
     @Value("${jwt.refresh-token-expiration}")
-    private long refreshExpiration;
+    private long refreshExpiration; // TTL refresh-токена в мс (604800000 = 7 дней)
 
     private static final String BLACKLIST_PREFIX = "blacklist:";
+    // Префикс ключей в Redis. Ключ = "blacklist:{refreshToken}"
 
-    @Transactional
+    @Transactional // Все операции БД внутри метода выполняются в одной транзакции
     public UserDto register(RegisterRequest req) {
+        // Проверяем уникальность логина и email ПЕРЕД сохранением
         if (userRepository.existsByUsername(req.getUsername())) {
             throw new IllegalArgumentException("Username '" + req.getUsername() + "' is already taken");
         }
@@ -58,14 +61,14 @@ public class AuthService {
         User user = User.builder()
                 .username(req.getUsername())
                 .email(req.getEmail())
-                .password(passwordEncoder.encode(req.getPassword()))
-                .role(Role.ROLE_CLIENT)
+                .password(passwordEncoder.encode(req.getPassword())) // BCrypt хешируем пароль
+                .role(Role.ROLE_CLIENT) // Новые пользователи всегда CLIENT (SELLER/ADMIN создаёт только DataLoader)
                 .build();
 
-        User savedUser = userRepository.save(user);
+        User savedUser = userRepository.save(user); // INSERT INTO users
         log.info("Registered new user: {}", savedUser.getUsername());
 
-        return mapToUserDto(savedUser);
+        return mapToUserDto(savedUser); // Возвращаем DTO (без пароля!)
     }
 
     @Transactional
@@ -74,26 +77,30 @@ public class AuthService {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(req.getUsername(), req.getPassword())
             );
+            // Если пароль неверный → бросает BadCredentialsException
+            // authenticationManager использует UserDetailsServiceImpl.loadUserByUsername()
+            // и BCryptPasswordEncoder для сравнения паролей
         } catch (BadCredentialsException e) {
-            throw new AuthException("Invalid username or password");
+            throw new AuthException("Invalid username or password"); // Скрываем детали для безопасности
         }
 
         User user = userRepository.findByUsername(req.getUsername())
                 .orElseThrow(() -> new ResourceNotFoundException("User", "username", req.getUsername()));
 
-        String accessToken = jwtUtils.generateAccessToken(user);
-        String refreshTokenValue = jwtUtils.generateRefreshToken(user);
+        String accessToken = jwtUtils.generateAccessToken(user);       // Новый access-токен (15 мин)
+        String refreshTokenValue = jwtUtils.generateRefreshToken(user); // Новый refresh-токен (7 дней)
 
         LocalDateTime expiryDate = LocalDateTime.now().plusSeconds(refreshExpiration / 1000);
+        // refreshExpiration в мс → переводим в секунды для LocalDateTime
 
         RefreshToken refreshToken = RefreshToken.builder()
                 .token(refreshTokenValue)
                 .user(user)
-                .expiryDate(expiryDate)
+                .expiryDate(expiryDate) // Когда токен истечёт в БД
                 .revoked(false)
                 .build();
 
-        refreshTokenRepository.save(refreshToken);
+        refreshTokenRepository.save(refreshToken); // Сохраняем в refresh_tokens
         log.info("User '{}' logged in successfully", user.getUsername());
 
         return AuthResponse.builder()
@@ -107,29 +114,28 @@ public class AuthService {
         String tokenValue = req.getRefreshToken();
 
         RefreshToken storedToken = refreshTokenRepository.findByToken(tokenValue)
-                .orElseThrow(() -> new AuthException("Refresh token not found"));
+                .orElseThrow(() -> new AuthException("Refresh token not found")); // Токена нет в БД
 
         if (storedToken.isRevoked()) {
-            throw new AuthException("Refresh token has been revoked");
+            throw new AuthException("Refresh token has been revoked"); // Уже использован при logout
         }
 
         if (storedToken.getExpiryDate().isBefore(LocalDateTime.now())) {
-            throw new AuthException("Refresh token has expired");
+            throw new AuthException("Refresh token has expired"); // Истёк по времени
         }
 
-        // Check Redis blacklist
+        // Дополнительная проверка Redis blacklist
         String blacklistKey = BLACKLIST_PREFIX + tokenValue;
         if (Boolean.TRUE.equals(redisTemplate.hasKey(blacklistKey))) {
-            throw new AuthException("Refresh token is blacklisted");
+            throw new AuthException("Refresh token is blacklisted"); // Занесён в blacklist
         }
 
-        User user = storedToken.getUser();
+        User user = storedToken.getUser(); // Получаем владельца токена (FetchType.LAZY → запрос в БД)
 
-        // Revoke old token
+        // Ротация токенов: старый отзываем, выдаём новую пару
         storedToken.setRevoked(true);
-        refreshTokenRepository.save(storedToken);
+        refreshTokenRepository.save(storedToken); // UPDATE refresh_tokens SET revoked = true
 
-        // Generate new token pair
         String newAccessToken = jwtUtils.generateAccessToken(user);
         String newRefreshTokenValue = jwtUtils.generateRefreshToken(user);
 
@@ -142,7 +148,7 @@ public class AuthService {
                 .revoked(false)
                 .build();
 
-        refreshTokenRepository.save(newRefreshToken);
+        refreshTokenRepository.save(newRefreshToken); // INSERT нового токена в БД
         log.info("Tokens refreshed for user '{}'", user.getUsername());
 
         return AuthResponse.builder()
@@ -156,23 +162,23 @@ public class AuthService {
         RefreshToken storedToken = refreshTokenRepository.findByToken(refreshTokenValue)
                 .orElseThrow(() -> new AuthException("Refresh token not found"));
 
-        // Mark as revoked in DB
         storedToken.setRevoked(true);
-        refreshTokenRepository.save(storedToken);
+        refreshTokenRepository.save(storedToken); // Помечаем как отозванный в БД
 
-        // Add to Redis blacklist with TTL until expiry
+        // Добавляем в Redis blacklist с TTL до истечения токена
         LocalDateTime expiryDate = storedToken.getExpiryDate();
         long secondsUntilExpiry = java.time.Duration.between(LocalDateTime.now(), expiryDate).getSeconds();
 
         if (secondsUntilExpiry > 0) {
             String blacklistKey = BLACKLIST_PREFIX + refreshTokenValue;
             redisTemplate.opsForValue().set(blacklistKey, "revoked", secondsUntilExpiry, TimeUnit.SECONDS);
+            // Redis автоматически удалит ключ через secondsUntilExpiry секунд (TTL)
         }
 
         log.info("User logged out, refresh token revoked");
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true) // readOnly = true → оптимизация: Hibernate не отслеживает изменения
     public UserDto getProfile(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId.toString()));
@@ -184,6 +190,7 @@ public class AuthService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId.toString()));
 
+        // Обновляем только непустые значения, только если они изменились
         if (newUsername != null && !newUsername.isBlank() && !newUsername.equals(user.getUsername())) {
             if (userRepository.existsByUsername(newUsername)) {
                 throw new IllegalArgumentException("Username '" + newUsername + "' is already taken");
@@ -197,17 +204,18 @@ public class AuthService {
             user.setEmail(newEmail);
         }
 
-        User saved = userRepository.save(user);
+        User saved = userRepository.save(user); // UPDATE users SET username=... WHERE id=...
         log.info("Profile updated for user {}", userId);
         return mapToUserDto(saved);
     }
 
     private UserDto mapToUserDto(User user) {
+        // Преобразует JPA-сущность в DTO (без пароля и служебных полей)
         return UserDto.builder()
                 .id(user.getId())
                 .username(user.getUsername())
                 .email(user.getEmail())
-                .role(user.getRole().name())
+                .role(user.getRole().name()) // Enum → строка "ROLE_CLIENT"
                 .build();
     }
 }
